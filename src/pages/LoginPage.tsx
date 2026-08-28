@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LineChart, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
 import { Button, Input } from '@/components/ui';
 
@@ -30,8 +30,8 @@ export function LoginPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <div className="p-3 bg-blue-50 rounded-xl mb-3">
-            <LineChart className="text-blue-600" size={32} />
+          <div className="w-16 h-16 rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm mb-3 p-1.5">
+            <img src="/ic_nexo.png" alt="Nexo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-xl font-bold text-gray-900">Nexo</h1>
           <p className="text-sm text-gray-400">Controle e planejamento financeiro</p>

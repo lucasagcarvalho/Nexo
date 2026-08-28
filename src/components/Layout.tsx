@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { LayoutDashboard, Eye, TrendingUp, Wallet, CreditCard, Landmark, BarChart3, CalendarDays, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, Building2, ChevronLeftCircle, ChevronRightCircle, LineChart, AlertCircle, XCircle } from 'lucide-react';
+import { LayoutDashboard, Eye, TrendingUp, Wallet, CreditCard, Landmark, BarChart3, CalendarDays, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, Building2, ChevronLeftCircle, ChevronRightCircle, AlertCircle, XCircle } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
@@ -164,8 +164,8 @@ function SidebarContent({ current, onNavigate, collapsed }: {
     <>
       <div className={`p-5 border-b border-gray-200 ${collapsed ? 'px-3' : ''}`}>
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2'}`}>
-          <div className="p-2 bg-blue-50 rounded-lg flex-shrink-0">
-            <LineChart className="text-blue-600" size={20} />
+          <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-white border border-gray-100 p-1">
+            <img src="/ic_nexo.png" alt="Nexo" className="w-full h-full object-contain" />
           </div>
           {!collapsed && (
             <div>
