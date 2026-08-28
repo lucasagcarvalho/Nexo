@@ -1,3 +1,5 @@
+import type { DebtStatus } from '../types';
+
 export interface MonthProjection {
   monthKey: string;
   income: number;
@@ -97,4 +99,37 @@ export interface CardCommitmentSummary {
   currentInvoiceIncomePercent: number;
   futureInstallmentsIncomePercent: number;
   totalLimitUsedPercent: number;
+}
+
+export interface FutureInstallmentItem extends InvoiceItem {
+  cardId: string;
+  cardName: string;
+}
+
+export interface FutureInstallmentMonth {
+  monthKey: string;
+  total: number;
+  items: FutureInstallmentItem[];
+}
+
+export interface DebtCommitmentItem {
+  debtId: string;
+  name: string;
+  institution: string;
+  status: DebtStatus;
+  currentBalance: number;
+  monthlyPayment: number;
+  installmentsRemaining: number;
+  payoffMonth: string | null;
+  interestRate: number | null;
+}
+
+export interface DebtCommitmentSummary {
+  totalBalance: number;
+  monthlyPaymentTotal: number;
+  incomeCommitmentPercent: number;
+  activeDebtCount: number;
+  payoffMonth: string | null;
+  averageInterestRate: number | null;
+  debts: DebtCommitmentItem[];
 }

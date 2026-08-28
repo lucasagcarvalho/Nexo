@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Plus, Edit2, Trash2, Landmark } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Plus, Edit2, Trash2, Landmark, Wallet, Percent, CalendarCheck, ListChecks } from 'lucide-react';
 import { useData } from '@/store/DataContext';
-import { totalDebt } from '@/lib/projection';
-import { formatCurrency, formatDate } from '@/lib/format';
+import { getDebtCommitmentSummary } from '@/lib/projection';
+import { useMonth } from '@/store/MonthContext';
+import { formatCurrency, formatDate, formatMonthBR, formatPercent } from '@/lib/format';
 import type { Debt, DebtStatus } from '@/lib/types';
-import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, ProgressBar, PersonSelect, IconButton } from '@/components/ui';
+import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, PersonSelect, IconButton, StatCard } from '@/components/ui';
 
 const DEBT_STATUSES: DebtStatus[] = ['Em aberto', 'Negociação', 'Parcelada', 'Quitada'];
 const STATUS_COLORS: Record<DebtStatus, 'red' | 'yellow' | 'blue' | 'green'> = {
@@ -16,6 +17,7 @@ const STATUS_COLORS: Record<DebtStatus, 'red' | 'yellow' | 'blue' | 'green'> = {
 
 export function DividasPage() {
   const { data, addDebt, updateDebt, deleteDebt, addPerson } = useData();
+  const { selectedMonth } = useMonth();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Debt | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -47,8 +49,9 @@ export function DividasPage() {
     setModalOpen(false);
   };
 
-  const totalDebtValue = totalDebt(data);
-  const activeDebts = data.debts.filter((d) => d.status !== 'Quitada');
+  const debtSummary = useMemo(() => getDebtCommitmentSummary(data, selectedMonth), [data, selectedMonth]);
+  const activeDebtIds = new Set(debtSummary.debts.map((debt) => debt.debtId));
+  const activeDebts = data.debts.filter((d) => activeDebtIds.has(d.id));
   const paidDebts = data.debts.filter((d) => d.status === 'Quitada');
 
   return (
@@ -56,19 +59,26 @@ export function DividasPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dívidas</h1>
-          <p className="text-sm text-gray-500">Dívida total ativa: {formatCurrency(totalDebtValue)}</p>
+          <p className="text-sm text-gray-500">Competência: {formatMonthBR(selectedMonth)} · dívida total ativa: {formatCurrency(debtSummary.totalBalance)}</p>
         </div>
         <Button onClick={openAdd}><Plus size={16} className="inline mr-1" /> Nova dívida</Button>
       </div>
 
-      {/* Active debts */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <StatCard title="Saldo devedor" value={formatCurrency(debtSummary.totalBalance)} subtitle={`${debtSummary.activeDebtCount} dívida(s) ativa(s)`} color="red" icon={<Wallet size={18} />} />
+        <StatCard title="Parcelas mensais" value={formatCurrency(debtSummary.monthlyPaymentTotal)} subtitle={`${formatPercent(debtSummary.incomeCommitmentPercent)} da renda`} color={debtSummary.incomeCommitmentPercent >= 15 ? 'red' : 'yellow'} icon={<Percent size={18} />} />
+        <StatCard title="Quitação prevista" value={debtSummary.payoffMonth ? formatMonthBR(debtSummary.payoffMonth) : 'Sem previsão'} subtitle={debtSummary.averageInterestRate === null ? 'Juros não informados' : `Juros médios: ${formatPercent(debtSummary.averageInterestRate)} a.m.`} color="blue" icon={<CalendarCheck size={18} />} />
+      </div>
+
       <div>
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Dívidas Ativas ({activeDebts.length})</h2>
         {activeDebts.length === 0 ? (
           <Card className="p-8"><EmptyState icon={<Landmark size={48} />} title="Nenhuma dívida ativa" message="Todas as dívidas foram quitadas!" /></Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeDebts.map((debt) => (
+            {activeDebts.map((debt) => {
+              const indicators = debtSummary.debts.find((item) => item.debtId === debt.id);
+              return (
               <Card key={debt.id} className="p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -78,25 +88,25 @@ export function DividasPage() {
                   <Badge color={STATUS_COLORS[debt.status]}>{debt.status}</Badge>
                 </div>
                 <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-400">Saldo devedor</span><span className="font-bold text-rose-600">{formatCurrency(debt.balance)}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-400">Parcela</span><span className="text-gray-700">{formatCurrency(debt.installmentAmount)}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-400">Parcelas restantes</span><span className="text-gray-700">{debt.installmentsRemaining}</span></div>
-                  {debt.interestRate !== undefined && debt.interestRate > 0 && (
-                    <div className="flex justify-between"><span className="text-gray-400">Juros</span><span className="text-gray-700">{debt.interestRate}% a.m.</span></div>
-                  )}
+                  <div className="flex justify-between"><span className="text-gray-400">Saldo original</span><span className="text-gray-500">Não informado</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Saldo atual</span><span className="font-bold text-rose-600">{formatCurrency(indicators?.currentBalance ?? debt.balance)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Parcela mensal</span><span className="text-gray-700">{formatCurrency(indicators?.monthlyPayment ?? debt.installmentAmount)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Parcelas restantes</span><span className="text-gray-700">{indicators?.installmentsRemaining ?? debt.installmentsRemaining}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Término estimado</span><span className="text-gray-700">{indicators?.payoffMonth ? formatMonthBR(indicators.payoffMonth) : 'Sem previsão'}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Juros / custo</span><span className="text-gray-700">{indicators?.interestRate === null || indicators?.interestRate === undefined ? 'Não informado' : `${formatPercent(indicators.interestRate)} a.m.`}</span></div>
                   <div className="flex justify-between"><span className="text-gray-400">Vencimento</span><span className="text-gray-700">{formatDate(debt.dueDate)}</span></div>
                 </div>
-                {debt.installmentsRemaining > 0 && debt.installmentAmount > 0 && (
-                  <div className="mt-3">
-                    <ProgressBar value={1} max={debt.installmentsRemaining + 1} color="blue" />
-                  </div>
-                )}
+                <div className="mt-3 flex items-center gap-2 rounded-lg bg-gray-50 p-2 text-xs text-gray-500">
+                  <ListChecks size={14} className="text-blue-500" />
+                  <span>{indicators?.payoffMonth ? `Última parcela prevista em ${formatMonthBR(indicators.payoffMonth)}.` : 'Sem parcelas futuras configuradas.'}</span>
+                </div>
                 <div className="flex gap-1 mt-3">
                   <IconButton icon={<Edit2 size={14} />} label="Editar dívida" onClick={() => openEdit(debt)} />
                   <IconButton icon={<Trash2 size={14} />} label="Excluir dívida" variant="danger" onClick={() => setConfirmDelete(debt.id)} />
                 </div>
               </Card>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

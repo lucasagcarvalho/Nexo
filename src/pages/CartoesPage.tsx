@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Plus, Edit2, Trash2, Copy, CreditCard as CreditCardIcon, ArrowLeft, AlertTriangle, TrendingUp, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Copy, CreditCard as CreditCardIcon, ArrowLeft, AlertTriangle, TrendingUp, CheckCircle2, Circle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, getCardMonthlyLimit, getCardCommitmentSummary, type InvoiceStatus } from '@/lib/projection';
+import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, getCardMonthlyLimit, getCardCommitmentSummary, getFutureInstallmentCalendar, type InvoiceStatus } from '@/lib/projection';
 import { formatCurrency, monthLabelShort, monthShort, formatMonthBR, addMonths, formatPercent } from '@/lib/format';
 import type { CreditCard, CardPurchase } from '@/lib/types';
 import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, ProgressBar, EmptyState, CurrencyInput, PersonSelect, IconButton } from '@/components/ui';
@@ -17,6 +17,7 @@ export function CartoesPage() {
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<string | null>(null);
+  const [expandedInstallmentMonth, setExpandedInstallmentMonth] = useState<string | null>(null);
 
   const [cardForm, setCardForm] = useState<Omit<CreditCard, 'id'>>({
     name: '', bank: '', holder: '', limit: 0, closingDay: 1, dueDay: 1, color: '#3B82F6',
@@ -24,6 +25,7 @@ export function CartoesPage() {
 
   const selectedCard = data.cards.find((c) => c.id === selectedCardId);
   const commitmentSummary = useMemo(() => getCardCommitmentSummary(data, selectedMonth), [data, selectedMonth]);
+  const installmentCalendar = useMemo(() => getFutureInstallmentCalendar(data, selectedMonth, 24), [data, selectedMonth]);
 
   if (selectedCard) {
     return <CardDetail card={selectedCard} onBack={() => setSelectedCardId(null)} />;
@@ -134,6 +136,49 @@ export function CartoesPage() {
             );
           })}
         </div>
+      )}
+
+      {installmentCalendar.length > 0 && (
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <CreditCardIcon size={18} className="text-blue-600" />
+            <h3 className="text-sm font-semibold text-gray-700">Calendário de parcelas futuras</h3>
+          </div>
+          <div className="space-y-2">
+            {installmentCalendar.map((month) => {
+              const expanded = expandedInstallmentMonth === month.monthKey;
+              return (
+                <div key={month.monthKey} className="border border-gray-100 rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedInstallmentMonth(expanded ? null : month.monthKey)}
+                    className="w-full flex items-center justify-between gap-3 p-3 bg-gray-50 hover:bg-blue-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+                      <span className="text-sm font-medium text-gray-700">{monthLabelShort(month.monthKey)}</span>
+                      <Badge color="blue">{month.items.length} parcela(s)</Badge>
+                    </div>
+                    <span className="text-sm font-bold text-gray-900">{formatCurrency(month.total)}</span>
+                  </button>
+                  {expanded && (
+                    <div className="divide-y divide-gray-100 bg-white">
+                      {month.items.map((item) => (
+                        <div key={`${month.monthKey}-${item.cardId}-${item.purchaseId}-${item.installmentNumber}`} className="p-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-700 truncate">{item.name}</p>
+                            <p className="text-xs text-gray-400">{item.cardName} · {item.installmentNumber}/{item.totalInstallments} · {item.category}</p>
+                          </div>
+                          <span className="text-sm font-bold text-gray-900 flex-shrink-0">{formatCurrency(item.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
       )}
 
       <Modal open={cardModalOpen} onClose={() => setCardModalOpen(false)} title={editingCard ? 'Editar cartão' : 'Novo cartão'} footer={

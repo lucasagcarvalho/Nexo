@@ -2,7 +2,7 @@ import type { AppData, CardPurchase, CreditCard, Settings } from '../types';
 import { addMonths, currentMonthKey, generateMonthKeys } from '../format';
 import { getActiveVigencia } from './vigenciaRules';
 import { incomeAmountForMonth } from './incomeRules';
-import type { CardCommitmentSummary, InvoiceItem, InvoiceStatus, PurchaseStatus } from './types';
+import type { CardCommitmentSummary, FutureInstallmentMonth, InvoiceItem, InvoiceStatus, PurchaseStatus } from './types';
 
 export function monthIndex(key: string): number {
   const [y, m] = key.split('-').map(Number);
@@ -196,4 +196,20 @@ export function getCardCommitmentSummary(data: AppData, monthKey: string): CardC
     futureInstallmentsIncomePercent: income > 0 ? (futureInstallmentsTotal / income) * 100 : 0,
     totalLimitUsedPercent: totalLimit > 0 ? (totalCommittedLimit / totalLimit) * 100 : 0,
   };
+}
+
+export function getFutureInstallmentCalendar(data: AppData, startMonth: string, count = 24): FutureInstallmentMonth[] {
+  return generateMonthKeys(addMonths(startMonth, 1), count)
+    .map((monthKey) => {
+      const items = data.cards.flatMap((card) => (
+        cardInvoiceDetail(data, card.id, monthKey).map((item) => ({
+          ...item,
+          cardId: card.id,
+          cardName: card.name,
+        }))
+      ));
+      const total = items.reduce((sum, item) => sum + item.amount, 0);
+      return { monthKey, total, items };
+    })
+    .filter((month) => month.total > 0);
 }

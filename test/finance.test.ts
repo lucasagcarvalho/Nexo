@@ -6,6 +6,8 @@ import { addMonths, currentMonthKey } from '../src/lib/format';
 import {
   cardInvoiceDetail,
   getCardCommitmentSummary,
+  getDebtCommitmentSummary,
+  getFutureInstallmentCalendar,
   cardUtilization,
   getCategoryBudgetUsages,
   debtPaymentForMonth,
@@ -585,12 +587,59 @@ test('indicadores de comprometimento do cartão separam limite, fatura e renda',
   assert.equal(nextMonthSummary.availableLimit, 1200);
 });
 
+test('calendário de parcelas futuras agrupa por fatura e bate com projeção', () => {
+  const data = baseData();
+  data.cards = [
+    card({ id: 'card-1', name: 'Nubank' }),
+    card({ id: 'card-2', name: 'Itaú' }),
+  ];
+  data.purchases = [
+    purchase({ id: 'notebook', cardId: 'card-1', name: 'Notebook', totalAmount: 900, installments: 3, firstInvoiceMonth: '2026-08' }),
+    purchase({ id: 'curso', cardId: 'card-2', name: 'Curso', totalAmount: 600, installments: 2, firstInvoiceMonth: '2026-09' }),
+  ];
+
+  const calendar = getFutureInstallmentCalendar(data, '2026-08', 4);
+  const september = calendar.find((month) => month.monthKey === '2026-09');
+  const projectionSeptember = projectMonths(data, 2, '2026-08').months[1];
+
+  assert.equal(calendar[0].monthKey, '2026-09');
+  assert.equal(september?.total, projectionSeptember.cardExpenses);
+  assert.equal(september?.total, 600);
+  assert.deepEqual(september?.items.map((item) => item.name).sort(), ['Curso', 'Notebook']);
+  assert.equal(september?.items.find((item) => item.name === 'Curso')?.cardName, 'Itaú');
+  assert.equal(calendar.some((month) => month.monthKey === '2026-12'), false);
+});
+
 test('dívidas ativa, quitada, última parcela e zerada respeitam regra mensal', () => {
   assert.equal(debtPaymentForMonth(debt(), '2026-08'), 200);
   assert.equal(debtPaymentForMonth(debt(), '2026-10'), 200);
   assert.equal(debtPaymentForMonth(debt(), '2026-11'), 0);
   assert.equal(debtPaymentForMonth(debt({ status: 'Quitada' }), '2026-08'), 0);
   assert.equal(debtPaymentForMonth(debt({ installmentsRemaining: 0 }), '2026-08'), 0);
+});
+
+test('visão de endividamento resume dívidas ativas e ignora quitadas', () => {
+  const data = baseData();
+  data.incomes = [income({ vigencias: [{ id: 'vig-income', amount: 5000, startDate: '2026-08', endDate: null }] })];
+  data.debts = [
+    debt({ id: 'debt-1', name: 'Acordo', balance: 1000, installmentAmount: 200, installmentsRemaining: 3, dueDate: '2026-08-15', interestRate: 2 }),
+    debt({ id: 'debt-2', name: 'Empréstimo', balance: 500, installmentAmount: 100, installmentsRemaining: 2, dueDate: '2026-09-10', interestRate: 4 }),
+    debt({ id: 'debt-3', name: 'Quitada', balance: 900, installmentAmount: 300, installmentsRemaining: 3, dueDate: '2026-08-05', status: 'Quitada' }),
+  ];
+
+  const summary = getDebtCommitmentSummary(data, '2026-08');
+  const projection = projectMonths(data, 3, '2026-08').months;
+
+  assert.equal(summary.totalBalance, 1500);
+  assert.equal(summary.monthlyPaymentTotal, 300);
+  assert.equal(summary.incomeCommitmentPercent, 6);
+  assert.equal(summary.activeDebtCount, 2);
+  assert.equal(summary.payoffMonth, '2026-10');
+  assert.equal(summary.debts.some((item) => item.debtId === 'debt-3'), false);
+  assert.equal(Math.round((summary.averageInterestRate ?? 0) * 100) / 100, 2.67);
+  assert.equal(projection[0].debtExpenses, 200);
+  assert.equal(projection[1].debtExpenses, 300);
+  assert.equal(projection[2].debtExpenses, 300);
 });
 
 test('contas usam snapshot histórico, saldo atual e projeção futura', () => {
