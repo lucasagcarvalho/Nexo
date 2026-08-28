@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { BarChart3, AlertTriangle, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { projectMonths, totalDebt, monthsUntilFreeOfInstallments } from '@/lib/projection';
+import { projectMonths, monthsUntilFreeOfInstallments } from '@/lib/projection';
 import { formatCurrency, monthLabelShort, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, Badge } from '@/components/ui';
 
@@ -30,7 +30,6 @@ export function ProjecaoPage() {
     Cartões: Math.round(m.cardExpenses),
   }));
 
-  const debt = totalDebt(data);
   const monthsFree = monthsUntilFreeOfInstallments(data, selectedMonth);
   const negativeMonths = months.filter((m) => m.balance < 0);
   const tightestMonth = [...months].sort((a, b) => a.balance - b.balance)[0];
@@ -153,6 +152,7 @@ export function ProjecaoPage() {
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Dívidas</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Total</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Saldo</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-500">Saldo contas</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Acumulado</th>
               </tr>
             </thead>
@@ -167,6 +167,7 @@ export function ProjecaoPage() {
                   <td className="px-4 py-2 text-right text-rose-600">{formatCurrency(m.debtExpenses)}</td>
                   <td className="px-4 py-2 text-right text-gray-900 font-medium">{formatCurrency(m.totalExpenses)}</td>
                   <td className={`px-4 py-2 text-right font-bold ${m.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(m.balance)}</td>
+                  <td className={`px-4 py-2 text-right font-medium ${m.projectedAccountsBalance >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>{formatCurrency(m.projectedAccountsBalance)}</td>
                   <td className={`px-4 py-2 text-right ${m.accumulatedBalance >= 0 ? 'text-gray-700' : 'text-rose-600'}`}>{formatCurrency(m.accumulatedBalance)}</td>
                 </tr>
               ))}

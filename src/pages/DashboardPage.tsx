@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, CheckCircle2, Info, AlertTriangle, LineChart as LineChartIcon, Calendar, BarChart3, Building2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, CheckCircle2, Info, AlertTriangle, LineChart as LineChartIcon, BarChart3, Building2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Area, AreaChart } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { projectMonths, generateAlerts, recoveryProgress, totalDebt, monthsUntilFreeOfInstallments, cardUtilization, totalBankBalance } from '@/lib/projection';
-import { formatCurrency, formatPercent, monthLabelShort, monthShort, formatDateBR, formatMonthBR, currentMonthKey } from '@/lib/format';
+import { getCategoryBudgetUsages, projectMonths, generateAlerts, recoveryProgress, totalDebt, monthsUntilFreeOfInstallments, cardUtilization, totalBankBalance, getCardMonthlyLimit } from '@/lib/projection';
+import { formatCurrency, formatPercent, monthLabelShort, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
 
@@ -22,11 +22,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const debt = totalDebt(data);
   const monthsFree = monthsUntilFreeOfInstallments(data, selectedMonth);
   const bankBalance = totalBankBalance(data);
+  const categoryBudgetUsages = useMemo(() => getCategoryBudgetUsages(data, selectedMonth), [data, selectedMonth]);
 
   if (!current) return null;
 
   const commitment = current.income > 0 ? (current.totalExpenses / current.income) * 100 : 0;
-  const cardLimit = data.settings.cardMonthlyLimit;
+  const cardLimit = getCardMonthlyLimit(data.settings, selectedMonth);
   const cardPct = cardLimit > 0 ? (current.cardExpenses / cardLimit) * 100 : 0;
   const cardColor = cardPct > 100 ? 'red' : cardPct >= 80 ? 'yellow' : 'green';
 
@@ -53,6 +54,16 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const categoryData = Object.entries(current.categoryBreakdown)
     .map(([name, value]) => ({ name, value: Math.round(value) }))
     .sort((a, b) => b.value - a.value);
+  const budgetStatusLabel = {
+    saudavel: 'Saudável',
+    atencao: 'Atenção',
+    excedido: 'Excedido',
+  };
+  const budgetStatusColor = {
+    saudavel: 'green',
+    atencao: 'yellow',
+    excedido: 'red',
+  } as const;
 
   // Group small categories into "Outros" (threshold: 5% of total)
   const totalCat = categoryData.reduce((s, c) => s + c.value, 0);
@@ -124,21 +135,31 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   };
 
   const alertIcons = {
-    critico: <AlertCircle className="text-rose-500" size={18} />,
-    atencao: <AlertTriangle className="text-amber-500" size={18} />,
+    critical: <AlertCircle className="text-rose-500" size={18} />,
+    warning: <AlertTriangle className="text-amber-500" size={18} />,
     info: <Info className="text-blue-500" size={18} />,
-    positivo: <CheckCircle2 className="text-emerald-500" size={18} />,
   };
 
   const alertBg = {
-    critico: 'bg-rose-50 border-rose-200',
-    atencao: 'bg-amber-50 border-amber-200',
+    critical: 'bg-rose-50 border-rose-200',
+    warning: 'bg-amber-50 border-amber-200',
     info: 'bg-blue-50 border-blue-200',
-    positivo: 'bg-emerald-50 border-emerald-200',
+  };
+
+  const alertBadgeColor = {
+    critical: 'red',
+    warning: 'yellow',
+    info: 'blue',
+  } as const;
+
+  const alertSeverityLabel = {
+    critical: 'Crítico',
+    warning: 'Atenção',
+    info: 'Info',
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
@@ -164,25 +185,59 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       </div>
 
       {/* Top cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
         <StatCard title="Receita Total" value={formatCurrency(current.income)} color="green" icon={<TrendingUp size={18} />} tooltip="Soma das receitas fixas e variáveis deste mês." />
-        <StatCard title="Total de Saídas" value={formatCurrency(current.totalExpenses)} color="red" icon={<TrendingDown size={18} />} tooltip="Gastos fixos, pontuais, cartões e dívidas deste mês." />
+        <StatCard title="Saídas Previstas" value={formatCurrency(current.expectedExpenses)} color="red" icon={<TrendingDown size={18} />} tooltip="Valor previsto para gastos fixos, pontuais, cartões e dívidas deste mês." />
+        <StatCard title="Saídas Realizadas" value={formatCurrency(current.realizedExpenses)} color="red" icon={<TrendingDown size={18} />} tooltip="Valor efetivo do mês, usando valor realizado quando informado." />
         <StatCard title="Cartões" value={formatCurrency(current.cardExpenses)} color="purple" icon={<CreditCard size={18} />} onClick={showCardDetail} tooltip="Total das faturas de cartão deste mês. Clique para ver a composição." />
         <StatCard title="Dívidas" value={formatCurrency(current.debtExpenses)} color="yellow" icon={<Wallet size={18} />} tooltip="Parcelas de dívidas consideradas neste mês." />
         <StatCard title="Saldo Projetado" value={formatCurrency(current.balance)} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} tooltip="Receitas previstas menos gastos, cartões e dívidas deste mês." />
         <StatCard title="Saldo em Contas" value={formatCurrency(bankBalance)} color={bankBalance >= 0 ? 'green' : 'red'} icon={<Building2 size={18} />} onClick={showBankDetail} tooltip="Soma dos saldos atuais de todas as contas. Clique para ver a composição." />
       </div>
 
+      {categoryBudgetUsages.length > 0 && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <PieChartIcon size={18} className="text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-700">Orçamento por Categoria · {formatMonthBR(selectedMonth)}</h3>
+            </div>
+            <button onClick={() => onNavigate('configuracoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Configurar</button>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            {categoryBudgetUsages.slice(0, 6).map((usage) => (
+              <div key={usage.budget.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-sm font-medium text-gray-700 truncate">{usage.category}</span>
+                  <Badge color={budgetStatusColor[usage.status]}>{budgetStatusLabel[usage.status]}</Badge>
+                </div>
+                <div className="flex items-baseline justify-between gap-2 mb-2">
+                  <span className="text-sm font-bold text-gray-900">{formatCurrency(usage.realizedAmount)}</span>
+                  <span className="text-xs text-gray-400">de {formatCurrency(usage.budgetAmount)}</span>
+                </div>
+                <ProgressBar value={usage.usagePercent} max={100} color={usage.status === 'excedido' ? 'red' : usage.status === 'atencao' ? 'yellow' : 'green'} />
+                <div className="flex items-center justify-between gap-2 mt-2 text-xs">
+                  <span className="text-gray-400">{usage.usagePercent.toFixed(1)}% usado</span>
+                  <span className={usage.difference > 0 ? 'text-rose-600 font-medium' : 'text-emerald-600 font-medium'}>
+                    {usage.difference > 0 ? '+' : ''}{formatCurrency(usage.difference)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Receita breakdown */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="p-3"><p className="text-xs text-gray-400">Receitas Fixas</p><p className="text-lg font-bold text-blue-600">{formatCurrency(current.fixedIncome)}</p></Card>
-        <Card className="p-3"><p className="text-xs text-gray-400">Receitas Variáveis</p><p className="text-lg font-bold text-amber-600">{formatCurrency(current.variableIncome)}</p></Card>
-        <Card className="p-3"><p className="text-xs text-gray-400">Gastos Fixos</p><p className="text-lg font-bold text-gray-900">{formatCurrency(current.fixedExpenses)}</p></Card>
-        <Card className="p-3"><p className="text-xs text-gray-400">Gastos Pontuais</p><p className="text-lg font-bold text-gray-900">{formatCurrency(current.variableExpenses)}</p></Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-1.5">
+        <Card className="p-4"><p className="text-xs text-gray-400">Receitas Fixas</p><p className="text-lg font-bold text-blue-600">{formatCurrency(current.fixedIncome)}</p></Card>
+        <Card className="p-4"><p className="text-xs text-gray-400">Receitas Variáveis</p><p className="text-lg font-bold text-amber-600">{formatCurrency(current.variableIncome)}</p></Card>
+        <Card className="p-4"><p className="text-xs text-gray-400">Gastos Fixos</p><p className="text-lg font-bold text-gray-900">{formatCurrency(current.fixedExpenses)}</p></Card>
+        <Card className="p-4"><p className="text-xs text-gray-400">Gastos Pontuais</p><p className="text-lg font-bold text-gray-900">{formatCurrency(current.variableExpenses)}</p></Card>
       </div>
 
       {/* Card limit + Recovery */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
         <Card className="p-4 lg:col-span-1">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-700">Cartões neste mês</h3>
@@ -207,7 +262,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
             <span className="text-2xl font-bold text-blue-600">{recovery.percent}%</span>
           </div>
           <ProgressBar value={recovery.percent} max={100} color="blue" />
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1 mt-3">
             {recovery.steps.map((step, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
                 <div className={`w-4 h-4 rounded-full flex items-center justify-center ${step.done ? 'bg-emerald-500' : 'bg-gray-200'}`}>
@@ -223,15 +278,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       {/* Cards section */}
       {data.cards.length > 0 && (
         <Card className="p-4">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-2">
             <CreditCard size={18} className="text-blue-600" />
             <h3 className="text-sm font-semibold text-gray-700">Cartões · {formatMonthBR(selectedMonth)}</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
             {data.cards.map((card) => {
               const util = cardUtilization(data, card, selectedMonth);
               return (
-                <button key={card.id} onClick={() => onNavigate('cartoes')} className="p-3 bg-gray-50 hover:bg-blue-50 rounded-lg text-left transition-colors">
+                <button key={card.id} onClick={() => onNavigate('cartoes')} className="p-3 bg-gray-50 hover:bg-blue-50 rounded-lg border border-gray-100 text-left transition-colors">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: card.color }} />
                     <span className="text-sm font-medium text-gray-700">{card.name}</span>
@@ -249,7 +304,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       )}
 
       {/* Charts row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         <Card className="p-4">
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Fluxo Financeiro · 12 meses a partir de {formatMonthBR(selectedMonth)}</h3>
           <ResponsiveContainer width="100%" height={260}>
@@ -283,13 +338,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       </div>
 
       {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         <Card className="p-4">
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Gastos por Categoria · {formatMonthBR(selectedMonth)}</h3>
           {categoryData.length === 0 ? (
             <div className="flex items-center justify-center h-[260px] text-sm text-gray-400">Nenhum gasto em {formatMonthBR(selectedMonth)}.</div>
           ) : (
-            <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex flex-col lg:flex-row gap-2">
               <ResponsiveContainer width="100%" height={260} className="flex-1">
                 <PieChart>
                   <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={40} label={(e: { name: string }) => e.name} labelLine={{ stroke: '#D1D5DB' }}>
@@ -336,9 +391,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
                 {typeData.map((t) => (
-                  <div key={t.name} className="p-2 bg-gray-50 rounded-lg text-center">
+                  <div key={t.name} className="p-2 bg-gray-50 rounded-lg border border-gray-100 text-center">
                     <p className="text-xs text-gray-400">{t.name}</p>
                     <p className="text-sm font-bold" style={{ color: t.color }}>{formatCurrency(t.value)}</p>
                   </div>
@@ -350,7 +405,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       </div>
 
       {/* Charts row 3 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         <Card className="p-4">
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Distribuição dos Gastos · {formatMonthBR(selectedMonth)}</h3>
           {categoryData.length === 0 ? (
@@ -385,18 +440,25 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
       {/* Alerts */}
       <Card className="p-4">
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-2">
           <AlertCircle size={18} className="text-amber-500" />
           <h3 className="text-sm font-semibold text-gray-700">Alertas Financeiros</h3>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1">
           {alerts.length === 0 ? (
             <p className="text-sm text-gray-400">Nenhum alerta no momento.</p>
           ) : (
-            alerts.map((alert, i) => (
-              <div key={i} className={`flex items-start gap-2 p-3 rounded-lg border ${alertBg[alert.type]}`}>
-                <div className="flex-shrink-0 mt-0.5">{alertIcons[alert.type]}</div>
-                <p className="text-sm text-gray-700">{alert.message}</p>
+            alerts.slice(0, 8).map((alert) => (
+              <div key={alert.id} className={`flex items-start gap-2 p-3 rounded-lg border ${alertBg[alert.severity]}`}>
+                <div className="flex-shrink-0 mt-0.5">{alertIcons[alert.severity]}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-gray-800">{alert.title}</p>
+                    <Badge color={alertBadgeColor[alert.severity]}>{alertSeverityLabel[alert.severity]}</Badge>
+                    {alert.month && <span className="text-xs text-gray-400">{formatMonthBR(alert.month)}</span>}
+                  </div>
+                  <p className="text-sm text-gray-700 mt-0.5">{alert.description}</p>
+                </div>
               </div>
             ))
           )}
@@ -405,17 +467,22 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
       {/* Metrics */}
       <Card className="p-4">
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-2">
           <BarChart3 size={18} className="text-blue-600" />
           <h3 className="text-sm font-semibold text-gray-700">Métricas · {formatMonthBR(selectedMonth)}</h3>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1.5">
           <MetricItem label="Receita total" value={formatCurrency(current.income)} positive />
           <MetricItem label="Gastos fixos" value={formatCurrency(current.fixedExpenses)} negative />
           <MetricItem label="Gastos com prazo" value={formatCurrency(current.prazoExpenses)} negative />
           <MetricItem label="Gastos pontuais" value={formatCurrency(current.variableExpenses)} negative />
           <MetricItem label="Faturas dos cartões" value={formatCurrency(current.cardExpenses)} />
           <MetricItem label="Dívidas mensais" value={formatCurrency(current.debtExpenses)} negative />
+          <MetricItem label="Previsto em saídas" value={formatCurrency(current.expectedExpenses)} negative />
+          <MetricItem label="Realizado em saídas" value={formatCurrency(current.realizedExpenses)} negative />
+          <MetricItem label="Pago no mês" value={formatCurrency(current.paidExpenses)} positive />
+          <MetricItem label="Pendente no mês" value={formatCurrency(current.unpaidExpenses)} negative={current.unpaidExpenses > 0} />
+          <MetricItem label="Variação vs previsto" value={`${formatCurrency(current.expenseVariance)} (${formatPercent(current.expenseVariancePercent)})`} positive={current.expenseVariance < 0} negative={current.expenseVariance > 0} />
           <MetricItem label="Saldo projetado" value={formatCurrency(current.balance)} positive={current.balance >= 0} negative={current.balance < 0} />
           <MetricItem label="Saldo em contas" value={formatCurrency(bankBalance)} positive={bankBalance >= 0} negative={bankBalance < 0} />
           <MetricItem label="% renda comprometida" value={formatPercent(commitment)} />
@@ -444,7 +511,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
 function MetricItem({ label, value, positive, negative }: { label: string; value: string; positive?: boolean; negative?: boolean }) {
   return (
-    <div className="p-2.5 bg-gray-50 rounded-lg">
+    <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
       <p className="text-xs text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
     </div>

@@ -1,9 +1,9 @@
 import { useState, useMemo, useRef, type FormEvent } from 'react';
-import { Plus, Edit2, Trash2, Copy, Check, X, Wallet, Search, Repeat, Calendar, Clock, Info, Power, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Copy, Check, X, Wallet, Search, Repeat, Calendar, Clock, Info, Power, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 import { useData, getActiveVigencia, applyVigenciaChange, applyMonthOverride } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { formatCurrency, formatMonthBR, formatDateBR, currentMonthKey, uid, compareMonths, addMonths } from '@/lib/format';
-import type { Expense, ExpenseType, PaymentMethod, EntryStatus, Vigencia } from '@/lib/types';
+import { formatCurrency, formatMonthBR, formatDateBR, uid, compareMonths, addMonths } from '@/lib/format';
+import type { Expense, ExpenseType, PaymentMethod, EntryStatus } from '@/lib/types';
 import { Card, Badge, Button, Modal, Input, Select, TextArea, EmptyState, CurrencyInput, MonthPicker, IconButton } from '@/components/ui';
 
 const PAYMENT_METHODS: PaymentMethod[] = ['Dinheiro', 'Débito', 'Crédito', 'PIX', 'Boleto', 'Transferência'];
@@ -16,6 +16,16 @@ const TYPE_META: Record<ExpenseType, { label: string; color: 'blue' | 'purple' |
 
 type ModalMode = 'add' | 'edit' | 'deactivate';
 type DeleteMode = null | { expense: Expense; monthKey: string };
+type SortKey = 'description' | 'type' | 'dueDate' | 'amount' | 'status';
+type SortDirection = 'asc' | 'desc';
+
+const SORT_LABELS: Record<SortKey, string> = {
+  description: 'Descrição',
+  type: 'Tipo',
+  dueDate: 'Vencimento',
+  amount: 'Valor',
+  status: 'Status',
+};
 
 interface FormState {
   description: string;
@@ -70,6 +80,10 @@ export function GastosPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [newCategory, setNewCategory] = useState('');
   const [showAddCategory, setShowAddCategory] = useState(false);
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: 'description',
+    direction: 'asc',
+  });
 
   const [form, setForm] = useState<FormState>({
     description: '', amount: 0, category: 'Moradia', type: 'Fixo',
@@ -258,14 +272,15 @@ export function GastosPage() {
   const monthExpenses = useMemo(() => {
     return data.expenses.filter((exp) => {
       if (exp.type === 'Fixo' || exp.type === 'Prazo') {
-        return getActiveVigencia(exp.vigencias, selectedMonth) !== null;
+        const vig = getActiveVigencia(exp.vigencias, selectedMonth);
+        return !!vig && vig.amount > 0;
       }
       return exp.competenceMonth === selectedMonth;
     });
   }, [data.expenses, selectedMonth]);
 
   const filtered = useMemo(() => {
-    return monthExpenses.filter((e) => {
+    const rows = monthExpenses.filter((e) => {
       if (search && !e.description.toLowerCase().includes(search.toLowerCase())) return false;
       if (filterType && e.type !== filterType) return false;
       if (filterCategory && e.category !== filterCategory) return false;
@@ -278,7 +293,35 @@ export function GastosPage() {
       if (filterMaxValue && amt > parseFloat(filterMaxValue)) return false;
       return true;
     });
-  }, [monthExpenses, search, filterType, filterCategory, filterStatus, filterMinValue, filterMaxValue, selectedMonth, isExpensePaidForMonth]);
+
+    return [...rows].sort((a, b) => {
+      const direction = sort.direction === 'asc' ? 1 : -1;
+      const aVig = getActiveVigencia(a.vigencias, selectedMonth);
+      const bVig = getActiveVigencia(b.vigencias, selectedMonth);
+      const aPaid = isExpensePaidForMonth(a, selectedMonth);
+      const bPaid = isExpensePaidForMonth(b, selectedMonth);
+
+      let result = 0;
+      if (sort.key === 'description') {
+        result = a.description.localeCompare(b.description, 'pt-BR', { sensitivity: 'base' });
+      } else if (sort.key === 'type') {
+        result = TYPE_META[a.type].label.localeCompare(TYPE_META[b.type].label, 'pt-BR', { sensitivity: 'base' });
+      } else if (sort.key === 'dueDate') {
+        const aDue = a.type === 'Pontual' ? 1 : a.dueDay;
+        const bDue = b.type === 'Pontual' ? 1 : b.dueDay;
+        result = aDue - bDue;
+      } else if (sort.key === 'amount') {
+        result = (aVig?.amount ?? 0) - (bVig?.amount ?? 0);
+      } else if (sort.key === 'status') {
+        result = Number(aPaid) - Number(bPaid);
+      }
+
+      if (result === 0) {
+        result = a.description.localeCompare(b.description, 'pt-BR', { sensitivity: 'base' });
+      }
+      return result * direction;
+    });
+  }, [monthExpenses, search, filterType, filterCategory, filterStatus, filterMinValue, filterMaxValue, selectedMonth, isExpensePaidForMonth, sort]);
 
   const totalFiltered = filtered.reduce((s, e) => {
     const vig = getActiveVigencia(e.vigencias, selectedMonth);
@@ -299,6 +342,13 @@ export function GastosPage() {
   const modalTitle = modalMode === 'add' ? 'Adicionar gasto' : modalMode === 'edit' ? 'Editar gasto' : modalMode === 'deactivate' ? 'Desativar gasto' : '';
 
   const formRef = useRef<HTMLFormElement>(null);
+
+  const toggleSort = (key: SortKey) => {
+    setSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
 
   return (
     <div className="space-y-6">
@@ -357,12 +407,12 @@ export function GastosPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">Descrição</th>
+                  <SortableHeader label="Descrição" sortKey="description" activeSort={sort} onSort={toggleSort} />
                   <th className="text-left px-4 py-3 font-medium text-gray-500">Categoria</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">Tipo</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">Vencimento</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-500">Valor</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
+                  <SortableHeader label="Tipo" sortKey="type" activeSort={sort} onSort={toggleSort} />
+                  <SortableHeader label="Vencimento" sortKey="dueDate" activeSort={sort} onSort={toggleSort} />
+                  <SortableHeader label="Valor" sortKey="amount" activeSort={sort} onSort={toggleSort} align="right" />
+                  <SortableHeader label="Status" sortKey="status" activeSort={sort} onSort={toggleSort} />
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -622,5 +672,37 @@ export function GastosPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  activeSort,
+  onSort,
+  align = 'left',
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeSort: { key: SortKey; direction: SortDirection };
+  onSort: (key: SortKey) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = activeSort.key === sortKey;
+  const Icon = activeSort.direction === 'asc' ? ChevronUp : ChevronDown;
+  const justify = align === 'right' ? 'justify-end' : 'justify-start';
+
+  return (
+    <th className={`px-4 py-3 font-medium text-gray-500 ${align === 'right' ? 'text-right' : 'text-left'}`}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 rounded text-xs uppercase tracking-wide transition-colors hover:text-gray-900 ${justify} ${align === 'right' ? 'w-full' : ''}`}
+        aria-label={`Ordenar por ${SORT_LABELS[sortKey]}`}
+      >
+        <span>{label}</span>
+        <Icon size={14} className={active ? 'text-blue-600' : 'text-gray-300'} />
+      </button>
+    </th>
   );
 }

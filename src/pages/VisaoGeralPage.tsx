@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Eye, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { projectMonths } from '@/lib/projection';
 import { formatCurrency, monthLabelShort, formatMonthBR } from '@/lib/format';
-import { Card, Badge, Modal } from '@/components/ui';
+import { Card, Modal } from '@/components/ui';
 
 type MonthStatus = 'saudavel' | 'atencao' | 'critico';
 

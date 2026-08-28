@@ -16,8 +16,16 @@ import { PlanejamentoPage } from '@/pages/PlanejamentoPage';
 import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
 
 function AppContent() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [page, setPage] = useState<PageId>('dashboard');
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-sm text-gray-500">Carregando...</p>
+      </div>
+    );
+  }
 
   if (!user) {
     return <LoginPage />;

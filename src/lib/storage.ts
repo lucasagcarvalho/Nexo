@@ -1,32 +1,37 @@
-import type { AppData, Income, Expense, Vigencia, CategoryEntry } from './types';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { AppData, Income, Expense, Scenario, Vigencia, CategoryEntry } from './types';
 import { seedData } from './seed';
 import { uid, currentMonthKey } from './format';
 import { getSupabase } from './supabaseClient';
 
 const STORAGE_KEY = 'recuperacao-financeira-v3';
 
+function storageKey(userId?: string): string {
+  return userId ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY;
+}
+
 // ─── localStorage cache (instant load) ───────────────────────────
 
-export function loadLocalData(): AppData {
+export function loadLocalData(userId?: string): AppData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(userId));
     if (!raw) {
       const data = seedData();
-      saveLocalData(data);
+      saveLocalData(data, userId);
       return data;
     }
     const parsed = JSON.parse(raw) as AppData;
     return migrateData(parsed);
   } catch {
     const data = seedData();
-    saveLocalData(data);
+    saveLocalData(data, userId);
     return data;
   }
 }
 
-export function saveLocalData(data: AppData): void {
+export function saveLocalData(data: AppData, userId?: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(storageKey(userId), JSON.stringify(data));
   } catch {
     // storage may be full or unavailable
   }
@@ -34,14 +39,14 @@ export function saveLocalData(data: AppData): void {
 
 // ─── Supabase persistence ────────────────────────────────────────
 
-export async function loadRemoteData(): Promise<AppData | null> {
+export async function loadRemoteData(userId: string): Promise<AppData | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
       .from('app_state')
       .select('data')
-      .eq('id', 1)
+      .eq('user_id', userId)
       .maybeSingle();
     if (error) {
       console.error('Erro ao carregar dados do Supabase:', error.message);
@@ -55,13 +60,14 @@ export async function loadRemoteData(): Promise<AppData | null> {
   }
 }
 
-export async function saveRemoteData(data: AppData): Promise<{ success: boolean; error?: string }> {
+export async function saveRemoteData(data: AppData, userId?: string): Promise<{ success: boolean; error?: string }> {
   const supabase = getSupabase();
   if (!supabase) return { success: true }; // No Supabase configured — local only
+  if (!userId) return { success: false, error: 'Usuário remoto não autenticado' };
   try {
     const { error } = await supabase
       .from('app_state')
-      .upsert({ id: 1, data }, { onConflict: 'id' });
+      .upsert({ user_id: userId, data }, { onConflict: 'user_id' });
     if (error) {
       return { success: false, error: error.message };
     }
@@ -81,9 +87,9 @@ export function saveData(data: AppData): void {
   saveLocalData(data);
 }
 
-export function resetData(): AppData {
+export function resetData(userId?: string): AppData {
   const data = seedData();
-  saveLocalData(data);
+  saveLocalData(data, userId);
   return data;
 }
 
@@ -194,10 +200,30 @@ function migrateData(data: any): AppData {
       categories.push(defName);
     }
   }
+  const settings = { ...seed.settings, ...data.settings };
+  if (!settings.cardMonthlyLimitVigencias || !Array.isArray(settings.cardMonthlyLimitVigencias) || settings.cardMonthlyLimitVigencias.length === 0) {
+    settings.cardMonthlyLimitVigencias = [{
+      id: uid(),
+      amount: settings.cardMonthlyLimit ?? seed.settings.cardMonthlyLimit,
+      startDate: currentMonthKey(),
+      endDate: null,
+    }];
+  }
+  const incomes: Income[] = (data.incomes ?? []).map(migrateIncome);
+  const validIncomeIds = new Set(incomes.map((income) => income.id));
+  const scenarios: Scenario[] = (data.scenarios ?? []).map((scenario: any) => {
+    const incomeOverrides = Object.fromEntries(
+      Object.entries(scenario.incomeOverrides ?? {}).filter(([incomeId]) => (
+        incomeId !== 'inc-lucas' || validIncomeIds.has(incomeId)
+      )),
+    ) as Record<string, number>;
+    return { ...scenario, incomeOverrides };
+  });
+
   return {
     categories,
     categoryEntries,
-    incomes: (data.incomes ?? []).map(migrateIncome),
+    incomes,
     expenses: (data.expenses ?? []).map(migrateExpense),
     cards: data.cards ?? [],
     purchases: (data.purchases ?? []).map((p: any) => ({
@@ -205,8 +231,8 @@ function migrateData(data: any): AppData {
       firstInvoiceMonth: p.firstInvoiceMonth ?? p.purchaseDate?.slice(0, 7) ?? currentMonthKey(),
     })),
     debts: data.debts ?? [],
-    scenarios: data.scenarios ?? [],
-    settings: { ...seed.settings, ...data.settings },
+    scenarios,
+    settings,
     history: data.history ?? [],
     pendingExpenses: data.pendingExpenses ?? [],
     bankAccounts: data.bankAccounts ?? [],
@@ -217,6 +243,7 @@ function migrateData(data: any): AppData {
       { id: 'p-outros', name: 'Outros', active: true },
     ],
     incomeTypes: data.incomeTypes ?? seed.incomeTypes,
+    categoryBudgets: data.categoryBudgets ?? [],
     cardInvoiceStatus: data.cardInvoiceStatus ?? {},
   };
 }

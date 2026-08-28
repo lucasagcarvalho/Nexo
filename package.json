@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test": "mkdir -p .tmp-tests && esbuild test/finance.test.ts --bundle --platform=node --format=esm --outfile=.tmp-tests/finance.test.mjs && node --test .tmp-tests/finance.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

@@ -152,7 +152,7 @@ function MonthSelector() {
   );
 }
 
-function SidebarContent({ current, onNavigate, collapsed, onToggleCollapse }: {
+function SidebarContent({ current, onNavigate, collapsed }: {
   current: PageId;
   onNavigate: (p: PageId) => void;
   collapsed: boolean;

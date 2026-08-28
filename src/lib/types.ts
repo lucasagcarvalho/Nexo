@@ -129,6 +129,7 @@ export interface Scenario {
 
 export interface Settings {
   cardMonthlyLimit: number;
+  cardMonthlyLimitVigencias?: Vigencia[];
   reserveTargetMonths: number;
   reserveFloor: number;
   surplusReserve: number;
@@ -175,6 +176,14 @@ export interface CategoryEntry {
   active: boolean;
 }
 
+export interface CategoryBudget {
+  id: string;
+  category: string;
+  amount: number;
+  startMonth: string;
+  endMonth: string | null;
+}
+
 export interface AppData {
   incomes: Income[];
   expenses: Expense[];
@@ -191,6 +200,7 @@ export interface AppData {
   bankBalanceSnapshots: BankBalanceSnapshot[];
   people: PersonEntry[];
   incomeTypes: string[];
+  categoryBudgets: CategoryBudget[];
   /** Per-card, per-month invoice payment status. Key format: `${cardId}|YYYY-MM`, value: true if paid. */
   cardInvoiceStatus?: Record<string, boolean>;
 }

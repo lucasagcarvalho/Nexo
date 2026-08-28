@@ -2,9 +2,9 @@ import { useState, useMemo } from 'react';
 import { Plus, Edit2, Trash2, Building2, ArrowDownCircle, History } from 'lucide-react';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { formatCurrency, formatMonthBR, formatDateBR, currentMonthKey } from '@/lib/format';
+import { formatCurrency, formatMonthBR, formatDateBR } from '@/lib/format';
 import type { BankAccount } from '@/lib/types';
-import { Card, Badge, Button, Modal, Input, TextArea, ConfirmDialog, EmptyState, CurrencyInput, PersonSelect, IconButton } from '@/components/ui';
+import { Card, Button, Modal, Input, TextArea, ConfirmDialog, EmptyState, CurrencyInput, PersonSelect, IconButton } from '@/components/ui';
 
 export function ContasPage() {
   const { data, addBankAccount, updateBankAccount, deleteBankAccount, addBalanceSnapshot, addPerson } = useData();

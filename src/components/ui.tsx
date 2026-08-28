@@ -42,12 +42,12 @@ const colorMap = {
 
 export function StatCard({ title, value, subtitle, icon, color = 'gray', onClick, tooltip }: StatCardProps) {
   return (
-    <Tooltip text={tooltip ?? ''}>
-      <Card hoverable={!!onClick} onClick={onClick} className="p-4">
+    <Tooltip text={tooltip ?? ''} className="w-full h-full">
+      <Card hoverable={!!onClick} onClick={onClick} className="w-full h-full p-4">
       <div className="flex items-start justify-between">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{title}</p>
-          <p className="text-xl font-bold text-gray-900 mt-1 truncate">{value}</p>
+          <p className="text-xl font-bold text-gray-900 mt-1 whitespace-nowrap">{value}</p>
           {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
         </div>
         {icon && (
@@ -556,9 +556,10 @@ interface TooltipProps {
   text: string;
   children: ReactNode;
   side?: 'top' | 'bottom' | 'left' | 'right';
+  className?: string;
 }
 
-export function Tooltip({ text, children, side = 'top' }: TooltipProps) {
+export function Tooltip({ text, children, side = 'top', className = '' }: TooltipProps) {
   const [show, setShow] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -589,7 +590,7 @@ export function Tooltip({ text, children, side = 'top' }: TooltipProps) {
 
   return (
     <>
-      <div ref={wrapperRef} className="relative inline-flex" onMouseEnter={handleEnter} onMouseLeave={handleLeave} onFocus={handleEnter} onBlur={handleLeave}>
+      <div ref={wrapperRef} className={`relative inline-flex ${className}`} onMouseEnter={handleEnter} onMouseLeave={handleLeave} onFocus={handleEnter} onBlur={handleLeave}>
         {children}
       </div>
       {show && text && typeof document !== 'undefined' && document.body && createPortal(

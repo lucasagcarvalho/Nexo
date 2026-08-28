@@ -184,7 +184,6 @@ export function ReceitasPage() {
 
   const getKindDescription = (inc: Income): string => {
     if (inc.kind === 'fixa') {
-      const vig = getActiveVigencia(inc.vigencias, selectedMonth);
       return `Fixa · ${formatCurrency(getAmount(inc))} · Ativa`;
     }
     if (inc.kind === 'variavel') {

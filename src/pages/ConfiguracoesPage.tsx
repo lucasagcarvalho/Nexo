@@ -1,18 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Settings as SettingsIcon, PiggyBank, History, FlaskConical, Layers, Trash2, Plus, AlertTriangle, CheckCircle2, Users, Edit2, Power, Tag } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { projectMonths, totalDebt, simulatePurchase } from '@/lib/projection';
-import { formatCurrency, monthShort, currentMonthKey, formatDateBR, formatMonthBR } from '@/lib/format';
-import { Card, Badge, Button, Input, Select, ConfirmDialog, ProgressBar, TextArea, IconButton, Modal, EmptyState } from '@/components/ui';
-import type { ScenarioType, CategoryEntry } from '@/lib/types';
+import { getCategoryBudgetUsages, projectMonths, simulatePurchase, type MonthProjection } from '@/lib/projection';
+import { formatCurrency, monthShort, formatMonthBR } from '@/lib/format';
+import { Card, Badge, Button, Input, Select, ConfirmDialog, ProgressBar, IconButton, Modal, EmptyState, MonthPicker, CurrencyInput } from '@/components/ui';
+import type { Scenario, ScenarioType, CategoryEntry, CategoryBudget } from '@/lib/types';
 import { PessoasTab } from '@/pages/PessoasTab';
 
 type Tab = 'configuracoes' | 'reserva' | 'cenarios' | 'simulador' | 'historico' | 'pendentes' | 'pessoas' | 'categorias';
 
 export function ConfiguracoesPage() {
-  const { data, updateSettings, addScenario, deleteScenario, markPendingAdded, addPendingExpense, deletePendingExpense, resetAll, addPerson, updatePerson, deletePerson, togglePerson, addCategory, updateCategory, deleteCategory, toggleCategory } = useData();
+  const { data, updateSettings, addScenario, deleteScenario, markPendingAdded, addPendingExpense, deletePendingExpense, resetAll, addPerson, updatePerson, deletePerson, togglePerson, addCategory, updateCategory, deleteCategory, toggleCategory, addCategoryBudget, updateCategoryBudget, deleteCategoryBudget } = useData();
   const [tab, setTab] = useState<Tab>('configuracoes');
   const [confirmReset, setConfirmReset] = useState(false);
 
@@ -62,7 +62,7 @@ export function ConfiguracoesPage() {
       {tab === 'historico' && <HistoricoTab data={data} />}
       {tab === 'pendentes' && <PendentesTab data={data} markPendingAdded={markPendingAdded} addPendingExpense={addPendingExpense} deletePendingExpense={deletePendingExpense} />}
       {tab === 'pessoas' && <PessoasTab people={data.people} addPerson={addPerson} updatePerson={updatePerson} deletePerson={deletePerson} togglePerson={togglePerson} />}
-      {tab === 'categorias' && <CategoriasTab categories={data.categoryEntries} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} toggleCategory={toggleCategory} />}
+      {tab === 'categorias' && <CategoriasTab data={data} selectedMonth={selectedMonth} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} toggleCategory={toggleCategory} addCategoryBudget={addCategoryBudget} updateCategoryBudget={updateCategoryBudget} deleteCategoryBudget={deleteCategoryBudget} />}
 
       <ConfirmDialog
         open={confirmReset}
@@ -192,48 +192,59 @@ function ReservaTab({ data, current }: { data: ReturnType<typeof useData>['data'
   );
 }
 
-function CenariosTab({ data, selectedMonth, addScenario, deleteScenario }: { data: ReturnType<typeof useData>['data']; selectedMonth: string; addScenario: (s: any) => void; deleteScenario: (id: string) => void }) {
+function CenariosTab({ data, selectedMonth, addScenario, deleteScenario }: { data: ReturnType<typeof useData>['data']; selectedMonth: string; addScenario: (s: Omit<Scenario, 'id'>) => void; deleteScenario: (id: string) => void }) {
   const [name, setName] = useState('');
   const [type, setType] = useState<ScenarioType>('Atual');
-  const [lucasOverride, setLucasOverride] = useState('');
+  const [selectedIncomeId, setSelectedIncomeId] = useState(data.incomes[0]?.id ?? '');
+  const [incomeOverride, setIncomeOverride] = useState('');
 
   const projection = useMemo(() => projectMonths(data, 12, selectedMonth), [data, selectedMonth]);
-
-  const applyScenario = (scenarioId: string) => {
-    const scenario = data.scenarios.find((s) => s.id === scenarioId);
-    if (!scenario) return;
-    // Show impact: compare base projection vs scenario
-    const scenarioData = { ...data, incomes: data.incomes.map((i) => ({ ...i, vigencias: i.vigencias.map((v) => ({ ...v, amount: scenario.incomeOverrides[i.id] ?? v.amount })) })) };
-    const scenarioProj = projectMonths(scenarioData, 12, selectedMonth);
-    return scenarioProj;
-  };
+  const incomeOptions = data.incomes.map((income) => ({ value: income.id, label: income.name }));
+  useEffect(() => {
+    if (!selectedIncomeId && data.incomes[0]) {
+      setSelectedIncomeId(data.incomes[0].id);
+    }
+  }, [data.incomes, selectedIncomeId]);
+  const scenarioDataFor = (incomeOverrides: Record<string, number>) => ({
+    ...data,
+    incomes: data.incomes.map((income) => ({
+      ...income,
+      vigencias: income.vigencias.map((vigencia) => ({
+        ...vigencia,
+        amount: incomeOverrides[income.id] ?? vigencia.amount,
+      })),
+    })),
+  });
 
   return (
     <div className="space-y-4">
       <Card className="p-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Criar Cenário</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <Input label="Nome" value={name} onChange={setName} placeholder="Ex: Otimista Janeiro" />
           <Select label="Tipo" value={type} onChange={(v) => setType(v as ScenarioType)} options={[{ value: 'Conservador', label: 'Conservador' }, { value: 'Atual', label: 'Atual' }, { value: 'Otimista', label: 'Otimista' }]} />
-          <Input label="Salário Lucas (R$)" type="number" value={lucasOverride} onChange={setLucasOverride} placeholder="Ex: 11000" />
+          <Select label="Receita" value={selectedIncomeId} onChange={setSelectedIncomeId} options={incomeOptions} />
+          <Input label="Novo valor (R$)" type="number" value={incomeOverride} onChange={setIncomeOverride} placeholder="Ex: 11000" />
         </div>
         <div className="flex justify-end mt-3">
           <Button onClick={() => {
-            if (!name) return;
+            if (!name || !selectedIncomeId || !incomeOverride) return;
             const overrides: Record<string, number> = {};
-            if (lucasOverride) overrides['inc-lucas'] = parseFloat(lucasOverride);
+            overrides[selectedIncomeId] = parseFloat(incomeOverride);
             addScenario({ name, type, incomeOverrides: overrides, description: '' });
-            setName(''); setLucasOverride('');
-          }}><Plus size={14} className="inline mr-1" /> Adicionar cenário</Button>
+            setName('');
+            setIncomeOverride('');
+          }} disabled={!name || !selectedIncomeId || !incomeOverride}><Plus size={14} className="inline mr-1" /> Adicionar cenário</Button>
         </div>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {data.scenarios.map((sc) => {
-          const scenarioData = { ...data, incomes: data.incomes.map((i) => ({ ...i, vigencias: i.vigencias.map((v) => ({ ...v, amount: sc.incomeOverrides[i.id] ?? v.amount })) })) };
+          const scenarioData = scenarioDataFor(sc.incomeOverrides);
           const scenarioProj = projectMonths(scenarioData, 12, selectedMonth);
           const totalIncome = scenarioProj.months.reduce((s, m) => s + m.income, 0);
           const totalBalance = scenarioProj.months.reduce((s, m) => s + m.balance, 0);
+          const overrideEntries = Object.entries(sc.incomeOverrides);
           return (
             <Card key={sc.id} className="p-4">
               <div className="flex items-start justify-between mb-2">
@@ -247,6 +258,19 @@ function CenariosTab({ data, selectedMonth, addScenario, deleteScenario }: { dat
                 <div className="flex justify-between"><span className="text-gray-400">Receita 12m</span><span className="font-medium text-emerald-600">{formatCurrency(totalIncome)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">Saldo 12m</span><span className={`font-medium ${totalBalance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(totalBalance)}</span></div>
               </div>
+              {overrideEntries.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
+                  {overrideEntries.map(([incomeId, value]) => {
+                    const income = data.incomes.find((item) => item.id === incomeId);
+                    return (
+                      <div key={incomeId} className="flex justify-between gap-2 text-xs">
+                        <span className={income ? 'text-gray-500' : 'text-amber-600'}>{income?.name ?? 'Receita removida'}</span>
+                        <span className="font-medium text-gray-700">{formatCurrency(value)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </Card>
           );
         })}
@@ -257,9 +281,9 @@ function CenariosTab({ data, selectedMonth, addScenario, deleteScenario }: { dat
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Comparação de Cenários · Saldo Mensal</h3>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={projection.months.slice(0, 12).map((m, i) => {
-            const row: any = { month: monthShort(m.monthKey) };
+            const row: Record<string, string | number> = { month: monthShort(m.monthKey) };
             for (const sc of data.scenarios) {
-              const scenarioData = { ...data, incomes: data.incomes.map((inc) => ({ ...inc, vigencias: inc.vigencias.map((v) => ({ ...v, amount: sc.incomeOverrides[inc.id] ?? v.amount })) })) };
+              const scenarioData = scenarioDataFor(sc.incomeOverrides);
               const sp = projectMonths(scenarioData, 12, selectedMonth);
               row[sc.name] = Math.round(sp.months[i]?.balance ?? 0);
             }
@@ -286,7 +310,13 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
   const [cardId, setCardId] = useState(data.cards[0]?.id ?? '');
   const { selectedMonth } = useMonth();
 
-  const result = useMemo(() => {
+  type SimulationResult = {
+    before: MonthProjection[];
+    after: MonthProjection[];
+    negativeMonths: { monthKey: string; before: number; after: number }[];
+  };
+
+  const result = useMemo<SimulationResult | null>(() => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) return null;
     const inst = parseInt(installments) || 1;
@@ -296,18 +326,18 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
     }
     if (simType === 'aumento') {
       const simData = { ...data, incomes: data.incomes.map((i) => ({ ...i, vigencias: i.vigencias.map((v) => ({ ...v, amount: v.amount + amt })) })) };
-      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] as any[] };
+      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] };
     }
     if (simType === 'reducao') {
       const simData = { ...data, expenses: data.expenses.map((e) => ({ ...e, vigencias: e.vigencias.map((v) => ({ ...v, amount: Math.max(0, v.amount - amt / data.expenses.length) })) })) };
-      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] as any[] };
+      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] };
     }
     if (simType === 'quitacao') {
       const simData = { ...data, debts: data.debts.map((d) => ({ ...d, balance: 0, installmentAmount: 0, installmentsRemaining: 0, status: 'Quitada' as const })) };
-      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] as any[] };
+      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] };
     }
     return null;
-  }, [simType, amount, installments, cardId, data]);
+  }, [simType, amount, installments, cardId, data, selectedMonth]);
 
   const chartData = result ? result.before.map((m, i) => ({
     month: monthShort(m.monthKey),
@@ -345,7 +375,7 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
                 <AlertTriangle size={18} className="text-rose-500" />
                 <h3 className="text-sm font-semibold text-rose-700">Meses que ficarão negativos</h3>
               </div>
-              {result.negativeMonths.map((nm: any) => (
+              {result.negativeMonths.map((nm) => (
                 <p key={nm.monthKey} className="text-sm text-rose-600">
                   {monthShort(nm.monthKey)}: {formatCurrency(nm.after)}
                 </p>
@@ -477,26 +507,76 @@ function PendentesTab({ data, markPendingAdded, addPendingExpense, deletePending
   );
 }
 
-function CategoriasTab({ categories, addCategory, updateCategory, deleteCategory, toggleCategory }: {
-  categories: CategoryEntry[];
+function CategoriasTab({ data, selectedMonth, addCategory, updateCategory, deleteCategory, toggleCategory, addCategoryBudget, updateCategoryBudget, deleteCategoryBudget }: {
+  data: ReturnType<typeof useData>['data'];
+  selectedMonth: string;
   addCategory: (name: string) => void;
   updateCategory: (id: string, updates: Partial<CategoryEntry>) => void;
   deleteCategory: (id: string) => void;
   toggleCategory: (id: string) => void;
+  addCategoryBudget: (budget: Omit<CategoryBudget, 'id'>) => void;
+  updateCategoryBudget: (id: string, updates: Partial<CategoryBudget>) => void;
+  deleteCategoryBudget: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CategoryEntry | null>(null);
   const [confirm, setConfirm] = useState<CategoryEntry | null>(null);
   const [name, setName] = useState('');
+  const [budgetOpen, setBudgetOpen] = useState(false);
+  const [editingBudget, setEditingBudget] = useState<CategoryBudget | null>(null);
+  const [confirmBudget, setConfirmBudget] = useState<CategoryBudget | null>(null);
+  const [budgetCategory, setBudgetCategory] = useState(data.categoryEntries.find((cat) => cat.active)?.name ?? data.categories[0] ?? '');
+  const [budgetAmount, setBudgetAmount] = useState(0);
+  const [budgetStart, setBudgetStart] = useState(selectedMonth);
+  const [budgetEnd, setBudgetEnd] = useState('');
+  const categories = data.categoryEntries;
+  const activeCategoryOptions = data.categoryEntries
+    .filter((cat) => cat.active)
+    .map((cat) => ({ value: cat.name, label: cat.name }));
+  const budgetUsages = useMemo(() => getCategoryBudgetUsages(data, selectedMonth), [data, selectedMonth]);
 
   const openAdd = () => { setEditing(null); setName(''); setOpen(true); };
   const openEdit = (cat: CategoryEntry) => { setEditing(cat); setName(cat.name); setOpen(true); };
+  const openAddBudget = () => {
+    setEditingBudget(null);
+    setBudgetCategory(activeCategoryOptions[0]?.value ?? data.categories[0] ?? '');
+    setBudgetAmount(0);
+    setBudgetStart(selectedMonth);
+    setBudgetEnd('');
+    setBudgetOpen(true);
+  };
+  const openEditBudget = (budget: CategoryBudget) => {
+    setEditingBudget(budget);
+    setBudgetCategory(budget.category);
+    setBudgetAmount(budget.amount);
+    setBudgetStart(budget.startMonth);
+    setBudgetEnd(budget.endMonth ?? '');
+    setBudgetOpen(true);
+  };
   const save = () => {
     if (!name.trim()) return;
     if (editing) updateCategory(editing.id, { name: name.trim() });
     else addCategory(name.trim());
     setOpen(false);
   };
+  const saveBudget = () => {
+    if (!budgetCategory || budgetAmount <= 0 || !budgetStart) return;
+    const payload = {
+      category: budgetCategory,
+      amount: budgetAmount,
+      startMonth: budgetStart,
+      endMonth: budgetEnd || null,
+    };
+    if (editingBudget) updateCategoryBudget(editingBudget.id, payload);
+    else addCategoryBudget(payload);
+    setBudgetOpen(false);
+  };
+  const budgetBadgeColor = (status: 'saudavel' | 'atencao' | 'excedido') => (
+    status === 'excedido' ? 'red' : status === 'atencao' ? 'yellow' : 'green'
+  );
+  const budgetLabel = (status: 'saudavel' | 'atencao' | 'excedido') => (
+    status === 'excedido' ? 'Excedido' : status === 'atencao' ? 'Atenção' : 'Saudável'
+  );
 
   return (
     <div className="space-y-4">
@@ -522,6 +602,62 @@ function CategoriasTab({ categories, addCategory, updateCategory, deleteCategory
         <form onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3"><Input label="Nome" value={name} onChange={setName} required /><button type="submit" className="hidden" aria-hidden="true" /></form>
       </Modal>
       <ConfirmDialog open={!!confirm} title="Excluir categoria" message="Se houver gastos vinculados, é preferível desativar a categoria para preservar o histórico. Deseja excluir mesmo assim?" onConfirm={() => { if (confirm) deleteCategory(confirm.id); setConfirm(null); }} onCancel={() => setConfirm(null)} confirmText="Excluir" />
+
+      <div className="flex items-center justify-between pt-2">
+        <div><h3 className="text-lg font-semibold text-gray-800">Orçamentos por categoria</h3><p className="text-sm text-gray-500">Limites por categoria com vigência mensal.</p></div>
+        <Button onClick={openAddBudget} disabled={activeCategoryOptions.length === 0}><Plus size={16} className="inline mr-1" /> Novo orçamento</Button>
+      </div>
+      <Card className="overflow-hidden">
+        {data.categoryBudgets.length === 0 ? <EmptyState icon={<PiggyBank size={48} />} title="Nenhum orçamento" /> : (
+          <div className="divide-y divide-gray-100">
+            {data.categoryBudgets.map((budget) => {
+              const usage = budgetUsages.find((item) => item.budget.id === budget.id);
+              const pct = usage?.usagePercent ?? 0;
+              const status = usage?.status ?? 'saudavel';
+              return (
+                <div key={budget.id} className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Tag size={14} className="text-gray-400" />
+                      <span className="font-medium text-gray-800">{budget.category}</span>
+                      <Badge color={budgetBadgeColor(status)}>{budgetLabel(status)}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-sm">
+                      <div><p className="text-xs text-gray-400">Orçamento</p><p className="font-semibold text-gray-800">{formatCurrency(budget.amount)}</p></div>
+                      <div><p className="text-xs text-gray-400">Realizado</p><p className="font-semibold text-gray-800">{formatCurrency(usage?.realizedAmount ?? 0)}</p></div>
+                      <div><p className="text-xs text-gray-400">Diferença</p><p className={`font-semibold ${(usage?.difference ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(usage?.difference ?? -budget.amount)}</p></div>
+                      <div><p className="text-xs text-gray-400">Vigência</p><p className="font-semibold text-gray-800">{formatMonthBR(budget.startMonth)} - {budget.endMonth ? formatMonthBR(budget.endMonth) : 'sem fim'}</p></div>
+                    </div>
+                    <div className="mt-3">
+                      <ProgressBar value={pct} max={100} color={status === 'excedido' ? 'red' : status === 'atencao' ? 'yellow' : 'green'} />
+                      <p className="text-xs text-gray-400 mt-1">{pct.toFixed(1)}% usado em {formatMonthBR(selectedMonth)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <IconButton icon={<Edit2 size={15} />} label="Editar orçamento" onClick={() => openEditBudget(budget)} />
+                    <IconButton icon={<Trash2 size={15} />} label="Excluir orçamento" variant="danger" onClick={() => setConfirmBudget(budget)} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      <Modal open={budgetOpen} onClose={() => setBudgetOpen(false)} title={editingBudget ? 'Editar orçamento' : 'Novo orçamento'} footer={
+        <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setBudgetOpen(false)}>Cancelar</Button><Button onClick={saveBudget} disabled={!budgetCategory || budgetAmount <= 0 || !budgetStart}>Salvar</Button></div>
+      }>
+        <form onSubmit={(e) => { e.preventDefault(); saveBudget(); }} className="space-y-3">
+          <Select label="Categoria" value={budgetCategory} onChange={setBudgetCategory} options={activeCategoryOptions.length > 0 ? activeCategoryOptions : data.categories.map((cat) => ({ value: cat, label: cat }))} required />
+          <CurrencyInput label="Valor do orçamento" value={budgetAmount} onChange={setBudgetAmount} required />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <MonthPicker label="Início" value={budgetStart} onChange={setBudgetStart} required />
+            <MonthPicker label="Fim" value={budgetEnd} onChange={setBudgetEnd} />
+          </div>
+          <button type="submit" className="hidden" aria-hidden="true" />
+        </form>
+      </Modal>
+      <ConfirmDialog open={!!confirmBudget} title="Excluir orçamento" message="Deseja excluir este orçamento por categoria?" onConfirm={() => { if (confirmBudget) deleteCategoryBudget(confirmBudget.id); setConfirmBudget(null); }} onCancel={() => setConfirmBudget(null)} confirmText="Excluir" />
     </div>
   );
 }

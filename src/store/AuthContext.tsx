@@ -1,96 +1,87 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { getSupabase } from '@/lib/supabaseClient';
 
 interface AuthUser {
+  id: string;
   email: string;
+  mode: 'local' | 'remote';
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
-}
-
-const AUTH_KEY = 'rec-fin-auth-v1';
-const USERS_KEY = 'rec-fin-users-v1';
-
-interface StoredUser {
-  email: string;
-  passwordHash: string;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  mode: 'local' | 'remote';
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// Simple hash — not cryptographically secure, but avoids storing plaintext passwords.
-// When migrating to Supabase Auth, this entire file gets replaced with Supabase calls.
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return String(hash);
-}
-
-function ensureDefaultUser(): void {
-  try {
-    const raw = localStorage.getItem(USERS_KEY);
-    if (raw) {
-      const users = JSON.parse(raw) as StoredUser[];
-      if (users.some((u) => u.email === 'lukas.ag.carvalho@gmail.com')) return;
-    }
-    const users: StoredUser[] = [
-      { email: 'lukas.ag.carvalho@gmail.com', passwordHash: simpleHash('Luna@2025') },
-    ];
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  } catch {
-    // ignore
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const supabase = getSupabase();
+  const mode = supabase ? 'remote' : 'local';
 
   useEffect(() => {
-    ensureDefaultUser();
-    try {
-      const raw = localStorage.getItem(AUTH_KEY);
-      if (raw) {
-        const stored = JSON.parse(raw) as AuthUser;
-        setUser(stored);
-      }
-    } catch {
-      // ignore
+    if (!supabase) {
+      setUser({ id: 'local', email: 'Modo local', mode: 'local' });
+      setLoading(false);
+      return;
     }
-  }, []);
 
-  const login = useCallback((email: string, password: string): boolean => {
-    try {
-      const raw = localStorage.getItem(USERS_KEY);
-      if (!raw) return false;
-      const users = JSON.parse(raw) as StoredUser[];
-      const found = users.find(
-        (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.passwordHash === simpleHash(password)
-      );
-      if (found) {
-        const authUser: AuthUser = { email: found.email };
-        setUser(authUser);
-        localStorage.setItem(AUTH_KEY, JSON.stringify(authUser));
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      const sessionUser = data.session?.user;
+      setUser(sessionUser ? { id: sessionUser.id, email: sessionUser.email ?? '', mode: 'remote' } : null);
+      setLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const sessionUser = session?.user;
+      setUser(sessionUser ? { id: sessionUser.id, email: sessionUser.email ?? '', mode: 'remote' } : null);
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    if (!supabase) {
+      setUser({ id: 'local', email: 'Modo local', mode: 'local' });
+      return { success: true };
     }
-  }, []);
 
-  const logout = useCallback(() => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (data.user) {
+      setUser({ id: data.user.id, email: data.user.email ?? email.trim(), mode: 'remote' });
+      return { success: true };
+    }
+    return { success: false, error: 'Não foi possível autenticar.' };
+  }, [supabase]);
+
+  const logout = useCallback(async () => {
+    if (supabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Erro ao sair:', error.message);
+      }
+    }
     setUser(null);
-    localStorage.removeItem(AUTH_KEY);
-  }, []);
+  }, [supabase]);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, mode }}>
       {children}
     </AuthContext.Provider>
   );

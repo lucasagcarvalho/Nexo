@@ -19,6 +19,7 @@ export function seedData(): AppData {
     scenarios: [],
     settings: {
       cardMonthlyLimit: 4000,
+      cardMonthlyLimitVigencias: [{ id: 'card-limit-default', amount: 4000, startDate: '2026-01', endDate: null }],
       reserveTargetMonths: 3,
       reserveFloor: 500,
       surplusReserve: 50,
@@ -41,5 +42,6 @@ export function seedData(): AppData {
       'Benefício', 'Pensão', 'Rendimentos', 'Investimentos', 'Dividendos',
       'Cashback', 'Presente', 'Outros',
     ],
+    categoryBudgets: [],
   };
 }

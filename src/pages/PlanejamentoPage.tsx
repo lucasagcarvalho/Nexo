@@ -1,55 +1,37 @@
 import { useMemo } from 'react';
 import { CalendarDays, Check, Clock, Repeat, Calendar, CreditCard, Landmark, TrendingUp } from 'lucide-react';
-import { useData, getActiveVigencia } from '@/store/DataContext';
+import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { projectMonths } from '@/lib/projection';
+import { getPlanningMonthDetails, projectMonths } from '@/lib/projection';
 import { formatCurrency, monthLabel, formatDateBR, formatMonthBR } from '@/lib/format';
-import { Card, Badge, ProgressBar } from '@/components/ui';
+import { Card, Badge } from '@/components/ui';
 
 export function PlanejamentoPage() {
-  const { data, togglePaidMonth, isExpensePaidForMonth } = useData();
+  const { data, togglePaidMonth, isExpensePaidForMonth, isInvoicePaid } = useData();
   const { selectedMonth } = useMonth();
 
   const projection = useMemo(() => projectMonths(data, 24, selectedMonth), [data, selectedMonth]);
+  const planning = useMemo(() => getPlanningMonthDetails(data, selectedMonth), [data, selectedMonth]);
   const monthData = projection.months[0];
-
-  if (!monthData) return null;
-
-  // Filter incomes and expenses for the selected month
-  const monthIncomes = data.incomes.filter((inc) => {
-    if (!inc.active) return false;
-    if (inc.kind === 'variavel') return inc.competenceMonth === selectedMonth;
-    return getActiveVigencia(inc.vigencias, selectedMonth) !== null;
-  });
-
-  const monthExpenses = data.expenses.filter((exp) => {
-    if (exp.type === 'Fixo') return getActiveVigencia(exp.vigencias, selectedMonth) !== null;
-    return exp.competenceMonth === selectedMonth;
-  });
-
-  const fixedExpenses = monthExpenses.filter((e) => e.type === 'Fixo');
-  const pontualExpenses = monthExpenses.filter((e) => e.type !== 'Fixo');
-
-  const cardEntries = Object.entries(monthData.cardByCard).filter(([, v]) => v > 0);
-  const activeDebts = data.debts.filter((d) => d.status !== 'Quitada' && d.installmentsRemaining > 0);
+  const cardEntries = planning.cards;
 
   const bills = useMemo(() => {
     const list: { id: string; date: string; label: string; amount: number; paid: boolean }[] = [];
-    for (const exp of monthExpenses) {
-      const vig = getActiveVigencia(exp.vigencias, selectedMonth);
-      const amount = vig?.amount ?? 0;
+    for (const { expense, amount } of planning.expenses) {
       if (amount > 0) {
-        list.push({ id: exp.id, date: `${selectedMonth}-${String(exp.dueDay).padStart(2, '0')}`, label: exp.description, amount, paid: isExpensePaidForMonth(exp, selectedMonth) });
+        list.push({ id: expense.id, date: `${selectedMonth}-${String(expense.dueDay).padStart(2, '0')}`, label: expense.description, amount, paid: isExpensePaidForMonth(expense, selectedMonth) });
       }
     }
-    for (const [cardId, amt] of cardEntries) {
+    for (const { cardId, amount } of cardEntries) {
       const card = data.cards.find((c) => c.id === cardId);
       if (card) {
-        list.push({ id: `card-${cardId}`, date: `${selectedMonth}-${String(card.dueDay).padStart(2, '0')}`, label: `Cartão ${card.name}`, amount: amt, paid: false });
+        list.push({ id: `card-${cardId}`, date: `${selectedMonth}-${String(card.dueDay).padStart(2, '0')}`, label: `Cartão ${card.name}`, amount, paid: isInvoicePaid(cardId, selectedMonth) });
       }
     }
     return list.sort((a, b) => a.date.localeCompare(b.date));
-  }, [monthExpenses, cardEntries, data.cards, selectedMonth]);
+  }, [planning.expenses, cardEntries, data.cards, selectedMonth, isExpensePaidForMonth, isInvoicePaid]);
+
+  if (!monthData) return null;
 
   return (
     <div className="space-y-6">
@@ -61,7 +43,9 @@ export function PlanejamentoPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-3"><p className="text-xs text-gray-400">Receitas</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(monthData.income)}</p></Card>
-        <Card className="p-3"><p className="text-xs text-gray-400">Despesas</p><p className="text-lg font-bold text-rose-600">{formatCurrency(monthData.totalExpenses)}</p></Card>
+        <Card className="p-3"><p className="text-xs text-gray-400">Previsto</p><p className="text-lg font-bold text-rose-600">{formatCurrency(monthData.expectedExpenses)}</p></Card>
+        <Card className="p-3"><p className="text-xs text-gray-400">Realizado</p><p className="text-lg font-bold text-rose-600">{formatCurrency(monthData.realizedExpenses)}</p></Card>
+        <Card className="p-3"><p className="text-xs text-gray-400">Pendente</p><p className="text-lg font-bold text-amber-600">{formatCurrency(monthData.unpaidExpenses)}</p></Card>
         <Card className="p-3"><p className="text-xs text-gray-400">Saldo do mês</p><p className={`text-lg font-bold ${monthData.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(monthData.balance)}</p></Card>
         <Card className="p-3"><p className="text-xs text-gray-400">Saldo acumulado</p><p className={`text-lg font-bold ${monthData.accumulatedBalance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(monthData.accumulatedBalance)}</p></Card>
       </div>
@@ -74,12 +58,10 @@ export function PlanejamentoPage() {
             <h3 className="text-sm font-semibold text-gray-700">Receitas</h3>
           </div>
           <div className="space-y-1.5">
-            {monthIncomes.length === 0 ? (
+            {planning.incomes.length === 0 ? (
               <p className="text-sm text-gray-400">Nenhuma receita em {formatMonthBR(selectedMonth)}.</p>
             ) : (
-              monthIncomes.map((inc) => {
-                const vig = getActiveVigencia(inc.vigencias, selectedMonth);
-                const amount = vig?.amount ?? 0;
+              planning.incomes.map(({ income: inc, amount }) => {
                 return (
                   <div key={inc.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2">
@@ -108,7 +90,7 @@ export function PlanejamentoPage() {
             {cardEntries.length === 0 ? (
               <p className="text-sm text-gray-400">Nenhuma fatura de cartão em {formatMonthBR(selectedMonth)}.</p>
             ) : (
-              cardEntries.map(([cardId, amt]) => {
+              cardEntries.map(({ cardId, amount }) => {
                 const card = data.cards.find((c) => c.id === cardId);
                 return (
                   <div key={cardId} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
@@ -116,7 +98,7 @@ export function PlanejamentoPage() {
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: card?.color ?? '#888' }} />
                       <span className="text-sm text-gray-700">{card?.name ?? cardId}</span>
                     </div>
-                    <span className="text-sm font-medium text-purple-600">{formatCurrency(amt)}</span>
+                    <span className="text-sm font-medium text-purple-600">{formatCurrency(amount)}</span>
                   </div>
                 );
               })
@@ -136,12 +118,10 @@ export function PlanejamentoPage() {
           <h3 className="text-sm font-semibold text-gray-700">Despesas Fixas</h3>
         </div>
         <div className="space-y-1.5">
-          {fixedExpenses.length === 0 ? (
+          {planning.fixedExpenses.length === 0 ? (
             <p className="text-sm text-gray-400">Nenhuma despesa fixa em {formatMonthBR(selectedMonth)}.</p>
           ) : (
-            fixedExpenses.map((exp) => {
-              const vig = getActiveVigencia(exp.vigencias, selectedMonth);
-              const amount = vig?.amount ?? 0;
+            planning.fixedExpenses.map(({ expense: exp, amount }) => {
               return (
                 <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-2">
@@ -164,6 +144,38 @@ export function PlanejamentoPage() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Despesas com Prazo */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock size={16} className="text-purple-500" />
+            <h3 className="text-sm font-semibold text-gray-700">Despesas com Prazo</h3>
+          </div>
+          <div className="space-y-1.5">
+            {planning.prazoExpenses.length === 0 ? (
+              <p className="text-sm text-gray-400">Nenhuma despesa com prazo em {formatMonthBR(selectedMonth)}.</p>
+            ) : (
+              planning.prazoExpenses.map(({ expense: exp, amount }) => {
+                return (
+                  <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => togglePaidMonth(exp.id, selectedMonth)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
+                        {isExpensePaidForMonth(exp, selectedMonth) && <Check size={12} className="text-white" />}
+                      </button>
+                      <span className="text-sm text-gray-700">{exp.description}</span>
+                      <span className="text-xs text-gray-400">{exp.category} · Dia {exp.dueDay}</span>
+                    </div>
+                    <span className="text-sm font-medium text-gray-900">{formatCurrency(amount)}</span>
+                  </div>
+                );
+              })
+            )}
+            <div className="flex items-center justify-between p-2 bg-purple-50 rounded-lg mt-2">
+              <span className="text-sm font-semibold text-purple-700">Total prazo</span>
+              <span className="text-sm font-bold text-purple-700">{formatCurrency(monthData.prazoExpenses)}</span>
+            </div>
+          </div>
+        </Card>
+
         {/* Despesas Pontuais */}
         <Card className="p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -171,12 +183,10 @@ export function PlanejamentoPage() {
             <h3 className="text-sm font-semibold text-gray-700">Despesas Pontuais</h3>
           </div>
           <div className="space-y-1.5">
-            {pontualExpenses.length === 0 ? (
+            {planning.pontualExpenses.length === 0 ? (
               <p className="text-sm text-gray-400">Nenhuma despesa pontual em {formatMonthBR(selectedMonth)}.</p>
             ) : (
-              pontualExpenses.map((exp) => {
-                const vig = getActiveVigencia(exp.vigencias, selectedMonth);
-                const amount = vig?.amount ?? 0;
+              planning.pontualExpenses.map(({ expense: exp, amount }) => {
                 return (
                   <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2">
@@ -205,16 +215,16 @@ export function PlanejamentoPage() {
             <h3 className="text-sm font-semibold text-gray-700">Dívidas</h3>
           </div>
           <div className="space-y-1.5">
-            {activeDebts.length === 0 ? (
+            {planning.debts.length === 0 ? (
               <p className="text-sm text-gray-400">Nenhuma dívida ativa.</p>
             ) : (
-              activeDebts.map((debt) => (
+              planning.debts.map(({ debt, amount }) => (
                 <div key={debt.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                   <div>
                     <span className="text-sm text-gray-700">{debt.name}</span>
                     <p className="text-xs text-gray-400">{debt.installmentsRemaining}x restantes</p>
                   </div>
-                  <span className="text-sm font-medium text-rose-600">{formatCurrency(debt.installmentAmount)}</span>
+                  <span className="text-sm font-medium text-rose-600">{formatCurrency(amount)}</span>
                 </div>
               ))
             )}
@@ -231,7 +241,11 @@ export function PlanejamentoPage() {
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Resultado do Mês</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Receitas</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(monthData.income)}</p></div>
-          <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Despesas</p><p className="text-lg font-bold text-rose-600">{formatCurrency(monthData.totalExpenses)}</p></div>
+          <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Previsto</p><p className="text-lg font-bold text-rose-600">{formatCurrency(monthData.expectedExpenses)}</p></div>
+          <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Realizado</p><p className="text-lg font-bold text-rose-600">{formatCurrency(monthData.realizedExpenses)}</p></div>
+          <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Pago</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(monthData.paidExpenses)}</p></div>
+          <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Pendente</p><p className="text-lg font-bold text-amber-600">{formatCurrency(monthData.unpaidExpenses)}</p></div>
+          <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Variação</p><p className={`text-lg font-bold ${monthData.expenseVariance <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(monthData.expenseVariance)}</p></div>
           <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Saldo</p><p className={`text-lg font-bold ${monthData.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(monthData.balance)}</p></div>
           <div className="p-3 bg-white rounded-lg"><p className="text-xs text-gray-400">Acumulado</p><p className={`text-lg font-bold ${monthData.accumulatedBalance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(monthData.accumulatedBalance)}</p></div>
         </div>

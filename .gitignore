@@ -7,9 +7,11 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.tmp-tests
 dist
 dist-ssr
 *.local
+PLANO_EVOLUCAO_CONTROLE_FINANCEIRO.md
 
 .vscode/*
 !.vscode/extensions.json

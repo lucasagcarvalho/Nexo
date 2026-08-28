@@ -24,7 +24,7 @@ export function parseCurrency(value: string): number {
     .replace(/R\$\s?/g, '')
     .replace(/\./g, '')
     .replace(/,/g, '.')
-    .replace(/[^0-9.\-]/g, '');
+    .replace(/[^0-9.-]/g, '');
   const n = parseFloat(cleaned);
   return isNaN(n) ? 0 : n;
 }

@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react';
-import { Plus, Edit2, Trash2, Copy, CreditCard as CreditCardIcon, ArrowLeft, AlertTriangle, TrendingUp, Calendar, Info, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Copy, CreditCard as CreditCardIcon, ArrowLeft, AlertTriangle, TrendingUp, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, type InvoiceStatus } from '@/lib/projection';
-import { formatCurrency, monthLabelShort, monthShort, currentMonthKey, formatMonthBR, addMonths } from '@/lib/format';
+import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, getCardMonthlyLimit, type InvoiceStatus } from '@/lib/projection';
+import { formatCurrency, monthLabelShort, monthShort, formatMonthBR, addMonths } from '@/lib/format';
 import type { CreditCard, CardPurchase } from '@/lib/types';
-import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, ProgressBar, EmptyState, CurrencyInput, MonthPicker, PersonSelect, IconButton } from '@/components/ui';
+import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, ProgressBar, EmptyState, CurrencyInput, PersonSelect, IconButton } from '@/components/ui';
 
 const CARD_COLORS = ['#EC4899', '#F59E0B', '#8B5CF6', '#3B82F6', '#10B981', '#EF4444', '#14B8A6', '#6B7280'];
 
@@ -59,6 +59,8 @@ export function CartoesPage() {
         </div>
         <Button onClick={openAddCard}><Plus size={16} className="inline mr-1" /> Adicionar cartão</Button>
       </div>
+
+      <CardMonthlyLimitEditor />
 
       {data.cards.length === 0 ? (
         <Card className="p-8">
@@ -460,6 +462,81 @@ export function CartoesPage() {
       </div>
     );
   }
+}
+
+function CardMonthlyLimitEditor() {
+  const { data, updateCardMonthlyLimit } = useData();
+  const { selectedMonth } = useMonth();
+  const currentLimit = getCardMonthlyLimit(data.settings, selectedMonth);
+  const currentInvoiceTotal = data.cards.reduce((sum, card) => {
+    return sum + cardUtilization(data, card, selectedMonth).currentInvoice;
+  }, 0);
+  const pct = currentLimit > 0 ? (currentInvoiceTotal / currentLimit) * 100 : 0;
+  const color = pct > 100 ? 'red' : pct >= 80 ? 'yellow' : 'green';
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(currentLimit);
+  const [scope, setScope] = useState<'this-month' | 'future'>('future');
+
+  const openEditor = () => {
+    setAmount(currentLimit);
+    setScope('future');
+    setOpen(true);
+  };
+
+  const save = () => {
+    updateCardMonthlyLimit(amount, selectedMonth, scope);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <Card className="p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <p className="text-xs text-gray-400">Meta mensal dos cartões</p>
+            <div className="flex items-baseline gap-2">
+              <p className="text-xl font-bold text-gray-900">{formatCurrency(currentLimit)}</p>
+              <span className="text-sm text-gray-400">em {formatMonthBR(selectedMonth)}</span>
+            </div>
+          </div>
+          <Button size="sm" variant="secondary" onClick={openEditor}>
+            <Edit2 size={14} className="inline mr-1" /> Alterar meta
+          </Button>
+        </div>
+        <div className="mt-3">
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-gray-400">Faturas do mês</span>
+            <span className="text-gray-600">{formatCurrency(currentInvoiceTotal)} ({pct.toFixed(0)}%)</span>
+          </div>
+          <ProgressBar value={currentInvoiceTotal} max={currentLimit} color={color} />
+        </div>
+      </Card>
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Meta mensal dos cartões" footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button onClick={save} disabled={amount < 0}>Salvar</Button>
+        </div>
+      }>
+        <div className="space-y-3">
+          <CurrencyInput label="Valor da meta" value={amount} onChange={setAmount} required />
+          <div className="p-3 bg-blue-50 rounded-lg">
+            <p className="text-sm font-semibold text-blue-700 mb-2">O que deseja alterar?</p>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" checked={scope === 'this-month'} onChange={() => setScope('this-month')} className="text-blue-600" />
+                <span className="text-sm text-gray-700">Somente {formatMonthBR(selectedMonth)}</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" checked={scope === 'future'} onChange={() => setScope('future')} className="text-blue-600" />
+                <span className="text-sm text-gray-700">A partir de {formatMonthBR(selectedMonth)}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
 }
 
 function InvoiceStatusBadge({ data, card, monthKey, invoiceAmount }: { data: import('@/lib/types').AppData; card: CreditCard; monthKey: string; invoiceAmount: number }) {

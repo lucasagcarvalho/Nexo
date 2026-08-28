@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import type { AppData, Income, Expense, CreditCard, CardPurchase, Debt, Scenario, Settings, HistoryEntry, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry } from '@/lib/types';
+import type { AppData, Income, Expense, CreditCard, CardPurchase, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
 import { loadLocalData, saveLocalData, loadRemoteData, saveRemoteData, resetData } from '@/lib/storage';
 import { uid, currentMonthKey, addMonths, compareMonths } from '@/lib/format';
-import { invoiceStatusKey } from '@/lib/projection';
+import { getActiveVigencia as getFinanceActiveVigencia, invoiceStatusKey, isExpensePaidForMonth as getFinanceExpensePaidForMonth } from '@/lib/projection';
+import { useAuth } from '@/store/AuthContext';
 
 interface DataContextValue {
   data: AppData;
@@ -42,11 +43,15 @@ interface DataContextValue {
   deleteScenario: (id: string) => void;
   // Settings
   updateSettings: (updates: Partial<Settings>) => void;
+  updateCardMonthlyLimit: (amount: number, monthKey: string, scope: 'this-month' | 'future') => void;
   // Categories
   addCategory: (name: string) => void;
   updateCategory: (id: string, updates: Partial<CategoryEntry>) => void;
   deleteCategory: (id: string) => void;
   toggleCategory: (id: string) => void;
+  addCategoryBudget: (budget: Omit<CategoryBudget, 'id'>) => void;
+  updateCategoryBudget: (id: string, updates: Partial<CategoryBudget>) => void;
+  deleteCategoryBudget: (id: string) => void;
   // Pending expenses
   markPendingAdded: (id: string) => void;
   addPendingExpense: (name: string, suggestedCategory: string) => void;
@@ -76,7 +81,9 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(() => loadLocalData());
+  const { user } = useAuth();
+  const localStorageUserId = user?.mode === 'remote' ? user.id : undefined;
+  const [data, setData] = useState<AppData>(() => loadLocalData(localStorageUserId));
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,22 +95,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const remote = await loadRemoteData();
-      if (!cancelled && remote) {
-        setData(remote);
-        saveLocalData(remote);
+      if (user?.mode !== 'remote') {
+        setLoading(false);
+        return;
+      }
+      const remote = await loadRemoteData(user.id);
+      if (!cancelled) {
+        if (remote) {
+          setData(remote);
+          saveLocalData(remote, user.id);
+        } else {
+          setData(loadLocalData(user.id));
+        }
       }
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [user]);
 
   // Debounced save to Supabase + immediate local cache
   useEffect(() => {
-    saveLocalData(data);
+    saveLocalData(data, localStorageUserId);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
-      const result = await saveRemoteData(latestDataRef.current);
+      if (user?.mode !== 'remote') return;
+      const result = await saveRemoteData(latestDataRef.current, user.id);
       if (!result.success) {
         setSaveError(result.error ?? 'Erro ao salvar dados');
       } else {
@@ -111,7 +127,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }, 800);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [data]);
+  }, [data, localStorageUserId, user]);
 
   const clearSaveError = useCallback(() => setSaveError(null), []);
 
@@ -205,7 +221,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isExpensePaidForMonth = useCallback((expense: Expense, monthKey: string): boolean => {
-    return expense.paidMonths?.[monthKey] ?? false;
+    return getFinanceExpensePaidForMonth(expense, monthKey);
   }, []);
 
   const deleteExpenseMonth = useCallback((id: string, monthKey: string, scope: 'this-month' | 'future') => {
@@ -332,7 +348,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateSettings = useCallback((updates: Partial<Settings>) => {
-    setData((prev) => ({ ...prev, settings: { ...prev.settings, ...updates } }));
+    setData((prev) => {
+      const nextSettings = { ...prev.settings, ...updates };
+      if (updates.cardMonthlyLimit !== undefined && updates.cardMonthlyLimitVigencias === undefined) {
+        const currentVigencias = prev.settings.cardMonthlyLimitVigencias ?? [{
+          id: uid(),
+          amount: prev.settings.cardMonthlyLimit,
+          startDate: currentMonthKey(),
+          endDate: null,
+        }];
+        nextSettings.cardMonthlyLimitVigencias = applyVigenciaChange(
+          currentVigencias,
+          currentMonthKey(),
+          updates.cardMonthlyLimit,
+        );
+      }
+      return { ...prev, settings: nextSettings };
+    });
     addHistory('edição', 'configuração', 'Configurações alteradas.');
   }, [addHistory]);
 
@@ -349,11 +381,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateCategory = useCallback((id: string, updates: Partial<CategoryEntry>) => {
-    setData((prev) => ({
-      ...prev,
-      categoryEntries: prev.categoryEntries.map((c) => (c.id === id ? { ...c, ...updates } : c)),
-      categories: prev.categoryEntries.map((c) => (c.id === id ? { ...c, ...updates } : c)).map((c) => c.name),
-    }));
+    setData((prev) => {
+      const previous = prev.categoryEntries.find((c) => c.id === id);
+      const nextEntries = prev.categoryEntries.map((c) => (c.id === id ? { ...c, ...updates } : c));
+      const nextName = nextEntries.find((c) => c.id === id)?.name;
+      return {
+        ...prev,
+        categoryEntries: nextEntries,
+        categories: nextEntries.map((c) => c.name),
+        categoryBudgets: previous && nextName && nextName !== previous.name
+          ? prev.categoryBudgets.map((budget) => (
+            budget.category === previous.name ? { ...budget, category: nextName } : budget
+          ))
+          : prev.categoryBudgets,
+      };
+    });
   }, []);
 
   const deleteCategory = useCallback((id: string) => {
@@ -364,6 +406,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ...prev,
         categoryEntries: prev.categoryEntries.filter((c) => c.id !== id),
         categories: prev.categories.filter((c) => c !== entry.name),
+        categoryBudgets: prev.categoryBudgets.filter((budget) => budget.category !== entry.name),
       };
     });
   }, []);
@@ -374,6 +417,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
       categoryEntries: prev.categoryEntries.map((c) => (c.id === id ? { ...c, active: !c.active } : c)),
     }));
   }, []);
+
+  const addCategoryBudget = useCallback((budget: Omit<CategoryBudget, 'id'>) => {
+    const newBudget: CategoryBudget = { ...budget, id: uid() };
+    setData((prev) => ({ ...prev, categoryBudgets: [...prev.categoryBudgets, newBudget] }));
+    addHistory('criação', 'orçamento', `Orçamento de "${budget.category}" criado.`);
+  }, [addHistory]);
+
+  const updateCategoryBudget = useCallback((id: string, updates: Partial<CategoryBudget>) => {
+    setData((prev) => ({
+      ...prev,
+      categoryBudgets: prev.categoryBudgets.map((budget) => (
+        budget.id === id ? { ...budget, ...updates } : budget
+      )),
+    }));
+  }, []);
+
+  const deleteCategoryBudget = useCallback((id: string) => {
+    const budget = data.categoryBudgets.find((item) => item.id === id);
+    setData((prev) => ({
+      ...prev,
+      categoryBudgets: prev.categoryBudgets.filter((item) => item.id !== id),
+    }));
+    if (budget) addHistory('exclusão', 'orçamento', `Orçamento de "${budget.category}" excluído.`);
+  }, [data.categoryBudgets, addHistory]);
 
   const markPendingAdded = useCallback((id: string) => {
     setData((prev) => ({
@@ -454,6 +521,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const updateCardMonthlyLimit = useCallback((amount: number, monthKey: string, scope: 'this-month' | 'future') => {
+    setData((prev) => {
+      const currentVigencias = prev.settings.cardMonthlyLimitVigencias ?? [{
+        id: uid(),
+        amount: prev.settings.cardMonthlyLimit,
+        startDate: currentMonthKey(),
+        endDate: null,
+      }];
+      const cardMonthlyLimitVigencias = scope === 'this-month'
+        ? applyMonthOverride(currentVigencias, monthKey, amount)
+        : applyVigenciaChange(currentVigencias, monthKey, amount);
+
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          cardMonthlyLimit: amount,
+          cardMonthlyLimitVigencias,
+        },
+      };
+    });
+    addHistory('alteração', 'meta de cartão', `Meta de cartão alterada para ${monthKey}.`);
+  }, [addHistory]);
+
   const toggleInvoicePaid = useCallback((cardId: string, monthKey: string) => {
     const key = invoiceStatusKey(cardId, monthKey);
     setData((prev) => {
@@ -473,9 +564,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [data.cardInvoiceStatus]);
 
   const resetAll = useCallback(() => {
-    const fresh = resetData();
+    const fresh = resetData(localStorageUserId);
     setData(fresh);
-  }, []);
+  }, [localStorageUserId]);
 
   const value: DataContextValue = {
     data,
@@ -489,7 +580,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addDebt, updateDebt, deleteDebt,
     addScenario, updateScenario, deleteScenario,
     updateSettings,
+    updateCardMonthlyLimit,
     addCategory, updateCategory, deleteCategory, toggleCategory,
+    addCategoryBudget, updateCategoryBudget, deleteCategoryBudget,
     markPendingAdded, addPendingExpense, deletePendingExpense,
     addHistory,
     addBankAccount, updateBankAccount, deleteBankAccount,
@@ -514,16 +607,7 @@ export function useData(): DataContextValue {
  * Helper: get the active vigência for a given month, or null if none.
  */
 export function getActiveVigencia(vigencias: Vigencia[], monthKey: string): Vigencia | null {
-  let active: Vigencia | null = null;
-  for (const v of vigencias) {
-    if (compareMonths(monthKey, v.startDate) < 0) continue;
-    if (v.endDate && compareMonths(monthKey, v.endDate) > 0) continue;
-    // Pick the most recent vigência that covers this month
-    if (!active || compareMonths(v.startDate, active.startDate) > 0) {
-      active = v;
-    }
-  }
-  return active;
+  return getFinanceActiveVigencia(vigencias, monthKey);
 }
 
 /**
