@@ -7,11 +7,13 @@ export function incomeAmountForMonth(income: Income, monthKey: string): number {
     if (income.competenceMonth && income.competenceMonth !== monthKey) return 0;
     const vig = getActiveVigencia(income.vigencias, monthKey);
     if (!vig) return 0;
-    return income.status === 'realizado' && income.realizedAmount != null ? income.realizedAmount : vig.amount;
+    const amount = income.status === 'realizado' && income.realizedAmount != null ? income.realizedAmount : vig.amount;
+    return Number.isFinite(amount) ? amount : 0;
   }
   const vig = getActiveVigencia(income.vigencias, monthKey);
   if (!vig) return 0;
-  return income.status === 'realizado' && income.realizedAmount != null ? income.realizedAmount : vig.amount;
+  const amount = income.status === 'realizado' && income.realizedAmount != null ? income.realizedAmount : vig.amount;
+  return Number.isFinite(amount) ? amount : 0;
 }
 
 export function isIncomeActiveInMonth(income: Income, monthKey: string): boolean {

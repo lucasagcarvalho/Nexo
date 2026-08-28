@@ -8,7 +8,7 @@ function endOfMonthDate(monthKey: string): string {
 }
 
 export function totalBankBalance(data: AppData): number {
-  return data.bankAccounts.reduce((sum, account) => sum + account.balance, 0);
+  return data.bankAccounts.reduce((sum, account) => sum + (Number.isFinite(account.balance) ? account.balance : 0), 0);
 }
 
 export function getAccountBalanceSnapshotForMonth(data: AppData, monthKey: string): number | null {
@@ -21,7 +21,7 @@ export function getAccountBalanceSnapshotForMonth(data: AppData, monthKey: strin
       .sort((a, b) => b.date.localeCompare(a.date))[0];
     if (!snapshot) return sum;
     hasSnapshot = true;
-    return sum + snapshot.balance;
+    return sum + (Number.isFinite(snapshot.balance) ? snapshot.balance : 0);
   }, 0);
 
   return hasSnapshot ? total : null;

@@ -6,23 +6,25 @@ export function isExpenseActiveInMonth(expense: Expense, monthKey: string): bool
   if (expense.type === 'Pontual') {
     if (expense.competenceMonth !== monthKey) return false;
     const vig = getActiveVigencia(expense.vigencias, monthKey);
-    return !!vig && vig.amount > 0;
+    return !!vig && Number.isFinite(vig.amount) && vig.amount > 0;
   }
   const vig = getActiveVigencia(expense.vigencias, monthKey);
-  return !!vig && vig.amount > 0;
+  return !!vig && Number.isFinite(vig.amount) && vig.amount > 0;
 }
 
 export function expenseAmountForMonth(expense: Expense, monthKey: string): number {
   if (!isExpenseActiveInMonth(expense, monthKey)) return 0;
   const vig = getActiveVigencia(expense.vigencias, monthKey);
   if (!vig) return 0;
-  return expense.status === 'realizado' && expense.realizedAmount != null ? expense.realizedAmount : vig.amount;
+  const amount = expense.status === 'realizado' && expense.realizedAmount != null ? expense.realizedAmount : vig.amount;
+  return Number.isFinite(amount) ? amount : 0;
 }
 
 export function expectedExpenseAmountForMonth(expense: Expense, monthKey: string): number {
   if (!isExpenseActiveInMonth(expense, monthKey)) return 0;
   const vig = getActiveVigencia(expense.vigencias, monthKey);
-  return vig?.amount ?? 0;
+  if (!vig || !Number.isFinite(vig.amount)) return 0;
+  return vig.amount;
 }
 
 export function isExpensePaidForMonth(expense: Expense, monthKey: string): boolean {

@@ -3,8 +3,8 @@ import { Settings as SettingsIcon, PiggyBank, History, FlaskConical, Layers, Tra
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { getCategoryBudgetUsages, projectMonths, simulatePurchase, type MonthProjection } from '@/lib/projection';
-import { formatCurrency, monthShort, formatMonthBR } from '@/lib/format';
+import { getCategoryBudgetUsages, getDataQualityIssues, projectMonths, simulatePurchase, type MonthProjection } from '@/lib/projection';
+import { compareMonths, formatCurrency, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, Badge, Button, Input, Select, ConfirmDialog, ProgressBar, IconButton, Modal, EmptyState, MonthPicker, CurrencyInput } from '@/components/ui';
 import type { Scenario, ScenarioType, CategoryEntry, CategoryBudget, ExpenseClass } from '@/lib/types';
 import { PessoasTab } from '@/pages/PessoasTab';
@@ -308,6 +308,13 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
   const [amount, setAmount] = useState('');
   const [installments, setInstallments] = useState('1');
   const [cardId, setCardId] = useState(data.cards[0]?.id ?? '');
+  const [incomeId, setIncomeId] = useState(data.incomes[0]?.id ?? '');
+  const [incomeMode, setIncomeMode] = useState<'valor' | 'percentual'>('valor');
+  const [incomeDirection, setIncomeDirection] = useState<'aumento' | 'reducao'>('aumento');
+  const [category, setCategory] = useState(data.categories[0] ?? 'Outros');
+  const [categoryPercent, setCategoryPercent] = useState('15');
+  const [debtId, setDebtId] = useState(data.debts.find((debt) => debt.status !== 'Quitada')?.id ?? '');
+  const [debtPayoffMonth, setDebtPayoffMonth] = useState('');
   const { selectedMonth } = useMonth();
 
   type SimulationResult = {
@@ -318,32 +325,83 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
 
   const result = useMemo<SimulationResult | null>(() => {
     const amt = parseFloat(amount);
-    if (!amt || amt <= 0) return null;
     const inst = parseInt(installments) || 1;
+    const before = projectMonths(data, 12, selectedMonth).months;
 
     if (simType === 'compra') {
+      if (!cardId || !amt || amt <= 0) return null;
       return simulatePurchase(data, cardId, amt, inst, `${selectedMonth}-01`, selectedMonth);
     }
-    if (simType === 'aumento') {
-      const simData = { ...data, incomes: data.incomes.map((i) => ({ ...i, vigencias: i.vigencias.map((v) => ({ ...v, amount: v.amount + amt })) })) };
-      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] };
+    if (simType === 'renda') {
+      if (!incomeId || !amt || amt <= 0) return null;
+      const direction = incomeDirection === 'aumento' ? 1 : -1;
+      const simData = {
+        ...data,
+        incomes: data.incomes.map((income) => {
+          if (income.id !== incomeId) return income;
+          return {
+            ...income,
+            vigencias: income.vigencias.map((vigencia) => ({
+              ...vigencia,
+              amount: Math.max(0, incomeMode === 'percentual'
+                ? vigencia.amount * (1 + direction * amt / 100)
+                : vigencia.amount + direction * amt),
+            })),
+          };
+        }),
+      };
+      const after = projectMonths(simData, 12, selectedMonth).months;
+      return { before, after, negativeMonths: negativeMonthsBetween(before, after) };
     }
-    if (simType === 'reducao') {
-      const simData = { ...data, expenses: data.expenses.map((e) => ({ ...e, vigencias: e.vigencias.map((v) => ({ ...v, amount: Math.max(0, v.amount - amt / data.expenses.length) })) })) };
-      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] };
+    if (simType === 'categoria') {
+      const percent = Math.min(100, Math.max(0, parseFloat(categoryPercent) || 0));
+      if (!category || percent <= 0) return null;
+      const factor = 1 - percent / 100;
+      const simData = {
+        ...data,
+        expenses: data.expenses.map((expense) => (
+          expense.category === category
+            ? { ...expense, vigencias: expense.vigencias.map((vigencia) => ({ ...vigencia, amount: Math.max(0, vigencia.amount * factor) })) }
+            : expense
+        )),
+        purchases: data.purchases.map((purchase) => (
+          purchase.category === category
+            ? { ...purchase, totalAmount: Math.max(0, purchase.totalAmount * factor) }
+            : purchase
+        )),
+      };
+      const after = projectMonths(simData, 12, selectedMonth).months;
+      return { before, after, negativeMonths: negativeMonthsBetween(before, after) };
     }
     if (simType === 'quitacao') {
-      const simData = { ...data, debts: data.debts.map((d) => ({ ...d, balance: 0, installmentAmount: 0, installmentsRemaining: 0, status: 'Quitada' as const })) };
-      return { before: projectMonths(data, 12, selectedMonth).months, after: projectMonths(simData, 12, selectedMonth).months, negativeMonths: [] };
+      if (!debtId) return null;
+      const payoffMonth = debtPayoffMonth || selectedMonth;
+      const simData = {
+        ...data,
+        debts: data.debts.map((debt) => {
+          if (debt.id !== debtId) return debt;
+          if (compareMonths(payoffMonth, selectedMonth) <= 0) {
+            return { ...debt, balance: 0, installmentAmount: 0, installmentsRemaining: 0, status: 'Quitada' as const };
+          }
+          const firstMonth = debt.dueDate.slice(0, 7);
+          const monthsToPayBeforeQuit = Math.max(0, compareMonths(payoffMonth, firstMonth));
+          return { ...debt, installmentsRemaining: Math.min(debt.installmentsRemaining, monthsToPayBeforeQuit) };
+        }),
+      };
+      const after = projectMonths(simData, 12, selectedMonth).months;
+      return { before, after, negativeMonths: negativeMonthsBetween(before, after) };
     }
     return null;
-  }, [simType, amount, installments, cardId, data, selectedMonth]);
+  }, [simType, amount, installments, cardId, incomeDirection, incomeId, incomeMode, category, categoryPercent, debtId, debtPayoffMonth, data, selectedMonth]);
 
   const chartData = result ? result.before.map((m, i) => ({
     month: monthShort(m.monthKey),
     Antes: Math.round(m.balance),
     Depois: Math.round(result.after[i]?.balance ?? 0),
+    Diferença: Math.round((result.after[i]?.balance ?? 0) - m.balance),
   })) : [];
+  const totalBefore = result?.before.reduce((s, m) => s + m.balance, 0) ?? 0;
+  const totalAfter = result?.after.reduce((s, m) => s + m.balance, 0) ?? 0;
 
   return (
     <div className="space-y-4">
@@ -353,15 +411,42 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Select label="Tipo de simulação" value={simType} onChange={setSimType} options={[
             { value: 'compra', label: 'Nova compra parcelada' },
-            { value: 'aumento', label: 'Aumento salarial' },
-            { value: 'reducao', label: 'Redução de despesa' },
-            { value: 'quitacao', label: 'Quitação de dívidas' },
+            { value: 'renda', label: 'Alterar renda' },
+            { value: 'categoria', label: 'Reduzir categoria' },
+            { value: 'quitacao', label: 'Quitar dívida' },
           ]} />
-          <Input label="Valor (R$)" type="number" step="0.01" value={amount} onChange={setAmount} />
+          {(simType === 'compra' || simType === 'renda') && (
+            <Input label={simType === 'renda' && incomeMode === 'percentual' ? 'Percentual (%)' : 'Valor (R$)'} type="number" step="0.01" value={amount} onChange={setAmount} />
+          )}
           {simType === 'compra' && (
             <>
               <Select label="Cartão" value={cardId} onChange={setCardId} options={data.cards.map((c) => ({ value: c.id, label: c.name }))} />
               <Input label="Parcelas" type="number" value={installments} onChange={setInstallments} />
+            </>
+          )}
+          {simType === 'renda' && (
+            <>
+              <Select label="Receita" value={incomeId} onChange={setIncomeId} options={data.incomes.map((income) => ({ value: income.id, label: income.name }))} />
+              <Select label="Direção" value={incomeDirection} onChange={(value) => setIncomeDirection(value as 'aumento' | 'reducao')} options={[
+                { value: 'aumento', label: 'Aumentar' },
+                { value: 'reducao', label: 'Reduzir' },
+              ]} />
+              <Select label="Tipo de ajuste" value={incomeMode} onChange={(value) => setIncomeMode(value as 'valor' | 'percentual')} options={[
+                { value: 'valor', label: 'Valor fixo' },
+                { value: 'percentual', label: 'Percentual' },
+              ]} />
+            </>
+          )}
+          {simType === 'categoria' && (
+            <>
+              <Select label="Categoria" value={category} onChange={setCategory} options={data.categories.map((item) => ({ value: item, label: item }))} />
+              <Input label="Redução (%)" type="number" step="0.01" value={categoryPercent} onChange={setCategoryPercent} />
+            </>
+          )}
+          {simType === 'quitacao' && (
+            <>
+              <Select label="Dívida" value={debtId} onChange={setDebtId} options={data.debts.filter((debt) => debt.status !== 'Quitada').map((debt) => ({ value: debt.id, label: debt.name }))} />
+              <Input label="Quitar a partir de (AAAA-MM)" value={debtPayoffMonth || selectedMonth} onChange={setDebtPayoffMonth} />
             </>
           )}
         </div>
@@ -393,6 +478,7 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
                 <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                 <Bar dataKey="Antes" fill="#D1D5DB" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Depois" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Diferença" fill="#10B981" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </Card>
@@ -400,15 +486,33 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
           <div className="grid grid-cols-2 gap-3">
             <Card className="p-3">
               <p className="text-xs text-gray-400">Saldo total (12m) - Antes</p>
-              <p className="text-lg font-bold text-gray-700">{formatCurrency(result.before.reduce((s, m) => s + m.balance, 0))}</p>
+              <p className="text-lg font-bold text-gray-700">{formatCurrency(totalBefore)}</p>
             </Card>
             <Card className="p-3">
               <p className="text-xs text-gray-400">Saldo total (12m) - Depois</p>
-              <p className={`text-lg font-bold ${result.after.reduce((s, m) => s + m.balance, 0) >= result.before.reduce((s, m) => s + m.balance, 0) ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {formatCurrency(result.after.reduce((s, m) => s + m.balance, 0))}
+              <p className={`text-lg font-bold ${totalAfter >= totalBefore ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {formatCurrency(totalAfter)}
               </p>
             </Card>
           </div>
+
+          <Card className="p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Diferença por mês</h3>
+            <div className="space-y-1">
+              {result.before.map((month, index) => {
+                const after = result.after[index];
+                const diff = (after?.balance ?? 0) - month.balance;
+                return (
+                  <div key={month.monthKey} className="grid grid-cols-4 gap-2 rounded-lg bg-gray-50 p-2 text-xs">
+                    <span className="font-medium text-gray-700">{formatMonthBR(month.monthKey)}</span>
+                    <span className="text-right text-gray-500">Base: {formatCurrency(month.balance)}</span>
+                    <span className="text-right text-gray-500">Cenário: {formatCurrency(after?.balance ?? 0)}</span>
+                    <span className={`text-right font-semibold ${diff >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{diff >= 0 ? '+' : ''}{formatCurrency(diff)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
 
           <div className="flex justify-center">
             <p className="text-xs text-gray-400">Esta é apenas uma simulação. Seus dados reais não foram alterados.</p>
@@ -417,6 +521,12 @@ function SimuladorTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
       )}
     </div>
   );
+}
+
+function negativeMonthsBetween(before: MonthProjection[], after: MonthProjection[]) {
+  return after
+    .filter((month, index) => month.balance < 0 && before[index]?.balance >= 0)
+    .map((month, index) => ({ monthKey: month.monthKey, before: before[index]?.balance ?? 0, after: month.balance }));
 }
 
 function HistoricoTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
@@ -448,11 +558,44 @@ function HistoricoTab({ data }: { data: ReturnType<typeof useData>['data'] }) {
 function PendentesTab({ data, markPendingAdded, addPendingExpense, deletePendingExpense }: { data: ReturnType<typeof useData>['data']; markPendingAdded: (id: string) => void; addPendingExpense: (name: string, cat: string) => void; deletePendingExpense: (id: string) => void }) {
   const [newName, setNewName] = useState('');
   const [newCat, setNewCat] = useState('Outros');
+  const dataQualityIssues = useMemo(() => getDataQualityIssues(data), [data]);
   const pending = data.pendingExpenses.filter((p) => !p.added);
   const added = data.pendingExpenses.filter((p) => p.added);
+  const severityColor = {
+    critical: 'red',
+    warning: 'yellow',
+  } as const;
+  const severityLabel = {
+    critical: 'Crítico',
+    warning: 'Atenção',
+  };
 
   return (
     <div className="space-y-4">
+      <Card className="p-4 bg-rose-50 border-rose-200">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle size={18} className="text-rose-500" />
+          <h3 className="text-sm font-semibold text-rose-700">Inconsistências que podem distorcer relatórios</h3>
+        </div>
+        <p className="text-xs text-rose-600 mb-3">{dataQualityIssues.length} inconsistência(s) encontrada(s)</p>
+        <div className="space-y-2">
+          {dataQualityIssues.length === 0 ? (
+            <p className="text-sm text-emerald-600 flex items-center gap-1"><CheckCircle2 size={16} /> Nenhuma inconsistência financeira encontrada.</p>
+          ) : (
+            dataQualityIssues.map((item) => (
+              <div key={item.id} className="p-2.5 bg-white rounded-lg border border-rose-100">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge color={severityColor[item.severity]}>{severityLabel[item.severity]}</Badge>
+                  <span className="text-xs text-gray-400">{item.entity} · {item.recordId}</span>
+                </div>
+                <p className="text-sm font-medium text-gray-800 mt-1">{item.title}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
       <Card className="p-4 bg-amber-50 border-amber-200">
         <div className="flex items-center gap-2 mb-2">
           <AlertTriangle size={18} className="text-amber-500" />

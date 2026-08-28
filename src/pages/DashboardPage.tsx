@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, CheckCircle2, Info, AlertTriangle, LineChart as LineChartIcon, BarChart3, Building2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, CheckCircle2, Info, AlertTriangle, LineChart as LineChartIcon, Building2, Banknote, ReceiptText } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Area, AreaChart } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { getCategoryBudgetUsages, projectMonths, generateAlerts, recoveryProgress, totalDebt, monthsUntilFreeOfInstallments, cardUtilization, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators } from '@/lib/projection';
+import { getCategoryBudgetUsages, projectMonths, generateAlerts, recoveryProgress, cardUtilization, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
 import { formatCurrency, formatPercent, monthLabelShort, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
@@ -20,15 +20,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const alerts = useMemo(() => generateAlerts(data, projection), [data, projection]);
   const recovery = useMemo(() => recoveryProgress(data, projection), [data, projection]);
   const healthIndicators = useMemo(() => getFinancialHealthIndicators(data, projection), [data, projection]);
+  const horizonSummaries = useMemo(() => getProjectionHorizonSummaries(data, projection), [data, projection]);
   const current = projection.months[0];
-  const debt = totalDebt(data);
-  const monthsFree = monthsUntilFreeOfInstallments(data, selectedMonth);
   const bankBalance = totalBankBalance(data);
   const categoryBudgetUsages = useMemo(() => getCategoryBudgetUsages(data, selectedMonth), [data, selectedMonth]);
 
   if (!current) return null;
 
-  const commitment = current.income > 0 ? (current.totalExpenses / current.income) * 100 : 0;
   const cardLimit = getCardMonthlyLimit(data.settings, selectedMonth);
   const cardPct = cardLimit > 0 ? (current.cardExpenses / cardLimit) * 100 : 0;
   const cardColor = cardPct > 100 ? 'red' : cardPct >= 80 ? 'yellow' : 'green';
@@ -87,32 +85,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     Renda: Math.round(m.income),
   }));
 
-  const showCardDetail = () => {
-    setDetailModal({
-      title: `Detalhamento das Faturas de Cartão · ${formatMonthBR(selectedMonth)}`,
-      content: (
-        <div className="space-y-3">
-          {data.cards.map((card) => {
-            const amt = current.cardByCard[card.id] ?? 0;
-            return (
-              <div key={card.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: card.color }} />
-                  <span className="text-sm font-medium text-gray-700">{card.name}</span>
-                </div>
-                <span className="text-sm font-bold text-gray-900">{formatCurrency(amt)}</span>
-              </div>
-            );
-          })}
-          <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-            <span className="text-sm font-medium text-blue-700">Total</span>
-            <span className="text-sm font-bold text-blue-900">{formatCurrency(current.cardExpenses)}</span>
-          </div>
-        </div>
-      ),
-    });
-  };
-
   const showBankDetail = () => {
     setDetailModal({
       title: `Composição do Saldo · ${formatMonthBR(selectedMonth)}`,
@@ -159,6 +131,11 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     warning: 'Atenção',
     info: 'Info',
   };
+  const topAlerts = alerts.slice(0, 3);
+  const topBudgetUsages = categoryBudgetUsages
+    .filter((usage) => usage.status !== 'saudavel')
+    .concat(categoryBudgetUsages.filter((usage) => usage.status === 'saudavel'))
+    .slice(0, 6);
 
   return (
     <div className="space-y-3">
@@ -186,17 +163,44 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         </div>
       </div>
 
-      {/* Top cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
-        <StatCard title="Receita Total" value={formatCurrency(current.income)} color="green" icon={<TrendingUp size={18} />} tooltip="Soma das receitas fixas e variáveis deste mês." />
-        <StatCard title="Saídas Previstas" value={formatCurrency(current.expectedExpenses)} color="red" icon={<TrendingDown size={18} />} tooltip="Valor previsto para gastos fixos, pontuais, cartões e dívidas deste mês." />
-        <StatCard title="Saídas Realizadas" value={formatCurrency(current.realizedExpenses)} color="red" icon={<TrendingDown size={18} />} tooltip="Valor efetivo do mês, usando valor realizado quando informado." />
-        <StatCard title="Cartões" value={formatCurrency(current.cardExpenses)} color="purple" icon={<CreditCard size={18} />} onClick={showCardDetail} tooltip="Total das faturas de cartão deste mês. Clique para ver a composição." />
-        <StatCard title="Dívidas" value={formatCurrency(current.debtExpenses)} color="yellow" icon={<Wallet size={18} />} tooltip="Parcelas de dívidas consideradas neste mês." />
-        <StatCard title="Saldo Projetado" value={formatCurrency(current.balance)} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} tooltip="Receitas previstas menos gastos, cartões e dívidas deste mês." />
-        <StatCard title="Saldo em Contas" value={formatCurrency(bankBalance)} color={bankBalance >= 0 ? 'green' : 'red'} icon={<Building2 size={18} />} onClick={showBankDetail} tooltip="Soma dos saldos atuais de todas as contas. Clique para ver a composição." />
+      {/* Bloco 1: resumo do mês */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-1">
+        <StatCard title="Receita prevista" value={formatCurrency(current.income)} color="green" icon={<TrendingUp size={18} />} tooltip="Soma das receitas fixas e variáveis deste mês." />
+        <StatCard title="Despesas previstas" value={formatCurrency(current.expectedExpenses)} color="red" icon={<TrendingDown size={18} />} tooltip="Valor previsto para gastos fixos, pontuais, cartões e dívidas deste mês." />
+        <StatCard title="Despesas realizadas" value={formatCurrency(current.realizedExpenses)} color="red" icon={<ReceiptText size={18} />} tooltip="Valor efetivo do mês, usando valor realizado quando informado." />
+        <StatCard title="Ainda a pagar" value={formatCurrency(current.unpaidExpenses)} color={current.unpaidExpenses > 0 ? 'yellow' : 'green'} icon={<Banknote size={18} />} tooltip="Saídas realizadas que ainda não foram marcadas como pagas." />
+        <StatCard title="Saldo previsto" value={formatCurrency(current.balance)} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} tooltip="Receitas previstas menos gastos, cartões e dívidas deste mês." />
+        <StatCard title="Saldo projetado contas" value={formatCurrency(current.projectedAccountsBalance)} color={current.projectedAccountsBalance >= 0 ? 'green' : 'red'} icon={<Building2 size={18} />} onClick={showBankDetail} tooltip="Saldo em contas projetado para o mês, conforme o motor financeiro." />
       </div>
 
+      {/* Bloco 2: alertas prioritários */}
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertCircle size={18} className="text-amber-500" />
+          <h3 className="text-sm font-semibold text-gray-700">Alertas prioritários</h3>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+          {topAlerts.length === 0 ? (
+            <div className="lg:col-span-3 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-700">Nenhum alerta prioritário no momento.</div>
+          ) : (
+            topAlerts.map((alert) => (
+              <div key={alert.id} className={`flex items-start gap-2 p-3 rounded-lg border ${alertBg[alert.severity]}`}>
+                <div className="flex-shrink-0 mt-0.5">{alertIcons[alert.severity]}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-gray-800">{alert.title}</p>
+                    <Badge color={alertBadgeColor[alert.severity]}>{alertSeverityLabel[alert.severity]}</Badge>
+                    {alert.month && <span className="text-xs text-gray-400">{formatMonthBR(alert.month)}</span>}
+                  </div>
+                  <p className="text-sm text-gray-700 mt-0.5">{alert.description}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
+      {/* Bloco 3: orçamento por categoria */}
       {categoryBudgetUsages.length > 0 && (
         <Card className="p-4">
           <div className="flex items-center justify-between gap-2 mb-3">
@@ -207,7 +211,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
             <button onClick={() => onNavigate('configuracoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Configurar</button>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-            {categoryBudgetUsages.slice(0, 6).map((usage) => (
+            {topBudgetUsages.map((usage) => (
               <div key={usage.budget.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="text-sm font-medium text-gray-700 truncate">{usage.category}</span>
@@ -230,24 +234,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         </Card>
       )}
 
-      {/* Receita breakdown */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-1.5">
-        <Card className="p-4"><p className="text-xs text-gray-400">Receitas Fixas</p><p className="text-lg font-bold text-blue-600">{formatCurrency(current.fixedIncome)}</p></Card>
-        <Card className="p-4"><p className="text-xs text-gray-400">Receitas Variáveis</p><p className="text-lg font-bold text-amber-600">{formatCurrency(current.variableIncome)}</p></Card>
-        <Card className="p-4"><p className="text-xs text-gray-400">Gastos Fixos</p><p className="text-lg font-bold text-gray-900">{formatCurrency(current.fixedExpenses)}</p></Card>
-        <Card className="p-4"><p className="text-xs text-gray-400">Gastos Pontuais</p><p className="text-lg font-bold text-gray-900">{formatCurrency(current.variableExpenses)}</p></Card>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5">
-        <ExpenseClassCard title="Essenciais" value={current.essentialExpenses} income={current.income} colorClass="text-emerald-600" />
-        <ExpenseClassCard title="Discricionários" value={current.discretionaryExpenses} income={current.income} colorClass="text-amber-600" />
-        <ExpenseClassCard title="Compromissos financeiros" value={current.financialCommitments} income={current.income} colorClass="text-purple-600" />
-        <ExpenseClassCard title="Outros" value={current.otherExpenses} income={current.income} colorClass="text-gray-700" />
-      </div>
-
-      {/* Card limit + Recovery */}
+      {/* Bloco 4: cartões */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-        <Card className="p-4 lg:col-span-1">
+        <Card className="p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-700">Cartões neste mês</h3>
             <Badge color={cardColor}>{formatPercent(cardPct)}</Badge>
@@ -265,41 +254,18 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         <Card className="p-4 lg:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <LineChartIcon size={16} className="text-blue-600" />
-              <h3 className="text-sm font-semibold text-gray-700">Saúde financeira explicável</h3>
+              <CreditCard size={18} className="text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-700">Resumo dos cartões · {formatMonthBR(selectedMonth)}</h3>
             </div>
-            <Badge color="blue">{formatMonthBR(selectedMonth)}</Badge>
+            <button onClick={() => onNavigate('cartoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Abrir cartões</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {healthIndicators.map((indicator) => (
-              <HealthIndicatorCard key={indicator.id} indicator={indicator} />
-            ))}
-          </div>
-          <div className="mt-3 border-t border-gray-100 pt-3">
-            <p className="text-xs font-medium text-gray-500 mb-2">Checklist de recuperação</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1">
-            {recovery.steps.map((step, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs">
-                <div className={`w-4 h-4 rounded-full flex items-center justify-center ${step.done ? 'bg-emerald-500' : 'bg-gray-200'}`}>
-                  {step.done && <CheckCircle2 size={10} className="text-white" />}
-                </div>
-                <span className={step.done ? 'text-gray-700' : 'text-gray-400'}>{step.label}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* Cards section */}
-      {data.cards.length > 0 && (
-        <Card className="p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <CreditCard size={18} className="text-blue-600" />
-            <h3 className="text-sm font-semibold text-gray-700">Cartões · {formatMonthBR(selectedMonth)}</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+            <MetricItem label="Fatura atual" value={formatCurrency(current.cardExpenses)} negative={current.cardExpenses > 0} />
+            <MetricItem label="% da renda" value={formatPercent(current.income > 0 ? (current.cardExpenses / current.income) * 100 : 0)} negative={current.income > 0 && current.cardExpenses / current.income >= 0.35} />
+            <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} negative={current.parcelasFuturas > 0} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
-            {data.cards.map((card) => {
+            {data.cards.slice(0, 3).map((card) => {
               const util = cardUtilization(data, card, selectedMonth);
               return (
                 <button key={card.id} onClick={() => onNavigate('cartoes')} className="p-3 bg-gray-50 hover:bg-blue-50 rounded-lg border border-gray-100 text-left transition-colors">
@@ -308,16 +274,62 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
                     <span className="text-sm font-medium text-gray-700">{card.name}</span>
                   </div>
                   <div className="space-y-1 text-xs">
-                    <div className="flex justify-between"><span className="text-gray-400">Fatura do mês</span><span className="font-medium text-gray-900">{formatCurrency(util.currentInvoice)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-400">Próxima fatura</span><span className="font-medium text-gray-700">{formatCurrency(util.nextInvoice)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-400">Parcelado futuro</span><span className="font-medium text-amber-600">{formatCurrency(util.futureInstallments)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-400">Fatura</span><span className="font-medium text-gray-900">{formatCurrency(util.currentInvoice)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-400">Próxima</span><span className="font-medium text-gray-700">{formatCurrency(util.nextInvoice)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-400">Futuro</span><span className="font-medium text-amber-600">{formatCurrency(util.futureInstallments)}</span></div>
                   </div>
                 </button>
               );
             })}
           </div>
         </Card>
-      )}
+      </div>
+
+      {/* Bloco 5: próximos meses */}
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <LineChartIcon size={16} className="text-blue-600" />
+          <h3 className="text-sm font-semibold text-gray-700">Próximos meses</h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {horizonSummaries.map((summary) => (
+            <div key={summary.months} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-gray-700">{summary.months} meses</p>
+                <Badge color={summary.negativeMonths > 0 ? 'red' : 'green'}>{summary.negativeMonths} negativo(s)</Badge>
+              </div>
+              <div className="mt-2 space-y-1 text-xs">
+                <div className="flex justify-between"><span className="text-gray-400">Menor saldo em contas</span><span className={summary.lowestProjectedAccountsBalance < 0 ? 'font-medium text-rose-600' : 'font-medium text-gray-700'}>{formatCurrency(summary.lowestProjectedAccountsBalance)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Maior fatura</span><span className="font-medium text-gray-700">{formatCurrency(summary.highestCardInvoice)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Maior comprometimento</span><span className="font-medium text-gray-700">{formatPercent(summary.highestIncomeCommitmentPercent)}</span></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Bloco 6: saúde financeira */}
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <LineChartIcon size={16} className="text-blue-600" />
+            <h3 className="text-sm font-semibold text-gray-700">Saúde financeira explicável</h3>
+          </div>
+          <Badge color="blue">{formatMonthBR(selectedMonth)}</Badge>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+          {healthIndicators.map((indicator) => (
+            <HealthIndicatorCard key={indicator.id} indicator={indicator} />
+          ))}
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5">
+        <ExpenseClassCard title="Essenciais" value={current.essentialExpenses} income={current.income} colorClass="text-emerald-600" />
+        <ExpenseClassCard title="Discricionários" value={current.discretionaryExpenses} income={current.income} colorClass="text-amber-600" />
+        <ExpenseClassCard title="Compromissos financeiros" value={current.financialCommitments} income={current.income} colorClass="text-purple-600" />
+        <ExpenseClassCard title="Outros" value={current.otherExpenses} income={current.income} colorClass="text-gray-700" />
+      </div>
 
       {/* Charts row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
@@ -423,22 +435,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       {/* Charts row 3 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         <Card className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Distribuição dos Gastos · {formatMonthBR(selectedMonth)}</h3>
-          {categoryData.length === 0 ? (
-            <div className="flex items-center justify-center h-[260px] text-sm text-gray-400">Nenhum gasto em {formatMonthBR(selectedMonth)}.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie data={categoryData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={(e: { name: string }) => e.name} labelLine={{ stroke: '#D1D5DB' }}>
-                  {categoryData.map((_, i) => (<Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />))}
-                </Pie>
-                <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </Card>
-
-        <Card className="p-4">
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Parcelas Futuras vs Renda</h3>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={parcelasData}>
@@ -454,58 +450,20 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         </Card>
       </div>
 
-      {/* Alerts */}
       <Card className="p-4">
         <div className="flex items-center gap-2 mb-2">
-          <AlertCircle size={18} className="text-amber-500" />
-          <h3 className="text-sm font-semibold text-gray-700">Alertas Financeiros</h3>
+          <CheckCircle2 size={18} className="text-emerald-600" />
+          <h3 className="text-sm font-semibold text-gray-700">Checklist de recuperação</h3>
         </div>
-        <div className="space-y-1">
-          {alerts.length === 0 ? (
-            <p className="text-sm text-gray-400">Nenhum alerta no momento.</p>
-          ) : (
-            alerts.slice(0, 8).map((alert) => (
-              <div key={alert.id} className={`flex items-start gap-2 p-3 rounded-lg border ${alertBg[alert.severity]}`}>
-                <div className="flex-shrink-0 mt-0.5">{alertIcons[alert.severity]}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold text-gray-800">{alert.title}</p>
-                    <Badge color={alertBadgeColor[alert.severity]}>{alertSeverityLabel[alert.severity]}</Badge>
-                    {alert.month && <span className="text-xs text-gray-400">{formatMonthBR(alert.month)}</span>}
-                  </div>
-                  <p className="text-sm text-gray-700 mt-0.5">{alert.description}</p>
-                </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1">
+          {recovery.steps.map((step, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              <div className={`w-4 h-4 rounded-full flex items-center justify-center ${step.done ? 'bg-emerald-500' : 'bg-gray-200'}`}>
+                {step.done && <CheckCircle2 size={10} className="text-white" />}
               </div>
-            ))
-          )}
-        </div>
-      </Card>
-
-      {/* Metrics */}
-      <Card className="p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <BarChart3 size={18} className="text-blue-600" />
-          <h3 className="text-sm font-semibold text-gray-700">Métricas · {formatMonthBR(selectedMonth)}</h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1.5">
-          <MetricItem label="Receita total" value={formatCurrency(current.income)} positive />
-          <MetricItem label="Gastos fixos" value={formatCurrency(current.fixedExpenses)} negative />
-          <MetricItem label="Gastos com prazo" value={formatCurrency(current.prazoExpenses)} negative />
-          <MetricItem label="Gastos pontuais" value={formatCurrency(current.variableExpenses)} negative />
-          <MetricItem label="Faturas dos cartões" value={formatCurrency(current.cardExpenses)} />
-          <MetricItem label="Dívidas mensais" value={formatCurrency(current.debtExpenses)} negative />
-          <MetricItem label="Previsto em saídas" value={formatCurrency(current.expectedExpenses)} negative />
-          <MetricItem label="Realizado em saídas" value={formatCurrency(current.realizedExpenses)} negative />
-          <MetricItem label="Pago no mês" value={formatCurrency(current.paidExpenses)} positive />
-          <MetricItem label="Pendente no mês" value={formatCurrency(current.unpaidExpenses)} negative={current.unpaidExpenses > 0} />
-          <MetricItem label="Variação vs previsto" value={`${formatCurrency(current.expenseVariance)} (${formatPercent(current.expenseVariancePercent)})`} positive={current.expenseVariance < 0} negative={current.expenseVariance > 0} />
-          <MetricItem label="Saldo projetado" value={formatCurrency(current.balance)} positive={current.balance >= 0} negative={current.balance < 0} />
-          <MetricItem label="Saldo em contas" value={formatCurrency(bankBalance)} positive={bankBalance >= 0} negative={bankBalance < 0} />
-          <MetricItem label="% renda comprometida" value={formatPercent(commitment)} />
-          <MetricItem label="Parcelado futuro" value={formatCurrency(current.parcelasFuturas)} negative />
-          <MetricItem label="Dívida total" value={formatCurrency(debt)} negative />
-          <MetricItem label="Meses p/ sair parcelas" value={`${monthsFree} meses`} />
-          <MetricItem label="Reserva recomendada" value={formatCurrency(current.totalExpenses * data.settings.reserveTargetMonths)} />
+              <span className={step.done ? 'text-gray-700' : 'text-gray-400'}>{step.label}</span>
+            </div>
+          ))}
         </div>
       </Card>
 

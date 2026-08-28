@@ -5,11 +5,14 @@ import { incomeAmountForMonth } from './incomeRules';
 import type { CardCommitmentSummary, FutureInstallmentMonth, InvoiceItem, InvoiceStatus, PurchaseStatus } from './types';
 
 export function monthIndex(key: string): number {
+  if (!/^\d{4}-\d{2}$/.test(key)) return Number.NaN;
   const [y, m] = key.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return Number.NaN;
   return y * 12 + (m - 1);
 }
 
 export function getInstallmentAmounts(purchase: CardPurchase): number[] {
+  if (!Number.isFinite(purchase.totalAmount) || !Number.isInteger(purchase.installments) || purchase.installments <= 0) return [];
   const base = purchase.totalAmount / purchase.installments;
   const amounts: number[] = [];
   let sum = 0;
@@ -28,8 +31,9 @@ export function getInstallmentAmounts(purchase: CardPurchase): number[] {
 export function purchaseInstallmentForMonth(purchase: CardPurchase, monthKey: string): number {
   const startMonth = purchase.firstInvoiceMonth ?? purchase.purchaseDate.slice(0, 7);
   const diff = monthIndex(monthKey) - monthIndex(startMonth);
+  if (!Number.isFinite(diff)) return 0;
   if (diff < 0 || diff >= purchase.installments) return 0;
-  return getInstallmentAmounts(purchase)[diff];
+  return getInstallmentAmounts(purchase)[diff] ?? 0;
 }
 
 export function getCardInvoiceForMonth(purchases: CardPurchase[], cardId: string, monthKey: string): number {
@@ -52,14 +56,17 @@ export function cardInvoiceDetail(data: AppData, cardId: string, monthKey: strin
     if (purchase.cardId !== cardId) continue;
     const startMonth = purchase.firstInvoiceMonth ?? purchase.purchaseDate.slice(0, 7);
     const diff = monthIndex(monthKey) - monthIndex(startMonth);
+    if (!Number.isFinite(diff)) continue;
     if (diff < 0 || diff >= purchase.installments) continue;
     const amounts = getInstallmentAmounts(purchase);
+    const amount = amounts[diff];
+    if (!Number.isFinite(amount)) continue;
     items.push({
       purchaseId: purchase.id,
       name: purchase.name,
       installmentNumber: diff + 1,
       totalInstallments: purchase.installments,
-      amount: amounts[diff],
+      amount,
       category: purchase.category,
     });
   }
@@ -70,6 +77,9 @@ export function purchaseInstallmentStatus(purchase: CardPurchase, refMonth?: str
   const startMonth = purchase.firstInvoiceMonth ?? purchase.purchaseDate.slice(0, 7);
   const curMonth = refMonth ?? currentMonthKey();
   const elapsed = Math.max(0, monthIndex(curMonth) - monthIndex(startMonth));
+  if (!Number.isFinite(elapsed) || !Number.isInteger(purchase.installments) || purchase.installments <= 0) {
+    return { currentInstallment: 0, remaining: 0, remainingBalance: 0 };
+  }
   const currentInstallment = Math.min(elapsed + 1, purchase.installments);
   const remaining = Math.max(0, purchase.installments - elapsed);
   const amounts = getInstallmentAmounts(purchase);
@@ -105,6 +115,7 @@ export function cardUtilization(data: AppData, card: CreditCard, refMonth?: stri
     const purchaseStartMonth = purchase.firstInvoiceMonth ?? purchase.purchaseDate.slice(0, 7);
     const purchaseStartIdx = monthIndex(purchaseStartMonth);
     const elapsed = currentIdx - purchaseStartIdx;
+    if (!Number.isFinite(elapsed) || !Number.isFinite(purchaseStartIdx)) continue;
     const amounts = getInstallmentAmounts(purchase);
 
     if (elapsed < purchase.installments) {

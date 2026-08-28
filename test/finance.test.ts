@@ -6,6 +6,7 @@ import { addMonths, currentMonthKey } from '../src/lib/format';
 import {
   cardInvoiceDetail,
   getCardCommitmentSummary,
+  getDataQualityIssues,
   getDebtCommitmentSummary,
   getFinancialHealthIndicators,
   getFutureInstallmentCalendar,
@@ -18,6 +19,7 @@ import {
   getCardInvoiceForMonth,
   getInvoiceStatus,
   getMonthHealthStatus,
+  getMonthlyComparisonSummary,
   getProjectionHorizonSummaries,
   getActiveVigencia,
   incomeAmountForMonth,
@@ -491,6 +493,73 @@ test('Planejamento e Projeção consomem o mesmo resumo mensal', () => {
   assert.equal(planning.prazoExpenses[0].amount, projection.prazoExpenses);
   assert.equal(planning.cards[0].amount, projection.cardExpenses);
   assert.equal(planning.debts[0].amount, projection.debtExpenses);
+});
+
+test('validações de consistência geram pendências e evitam NaN na projeção', () => {
+  const data = baseData();
+  data.people = [{ id: 'p-1', name: 'Lucas', active: true }];
+  data.categories = ['Casa'];
+  data.categoryEntries = [{ id: 'cat-1', name: 'Casa', active: true, expenseClass: 'essential' }];
+  data.incomes = [
+    income({ id: 'inc-ok', name: 'Salário', person: 'Lucas' }),
+    income({ id: 'inc-bad', name: 'Bônus', kind: 'determinada', person: 'Pessoa removida', vigencias: [{ id: 'vig-bad', amount: -100, startDate: '2026-08', endDate: null }] }),
+  ];
+  data.expenses = [
+    expense({ id: 'exp-prazo', description: 'Curso', type: 'Prazo', category: 'Categoria removida', person: 'Pessoa removida', vigencias: [{ id: 'vig-exp', amount: 300, startDate: '2026-10', endDate: null }] }),
+    expense({ id: 'exp-range', description: 'Contrato', vigencias: [{ id: 'vig-range', amount: 100, startDate: '2026-10', endDate: '2026-09' }] }),
+  ];
+  data.cards = [card({ id: 'card-bad', name: 'Cartão ruim', dueDay: 40 })];
+  data.purchases = [
+    { ...purchase({ id: 'pur-bad', name: 'Notebook', cardId: 'missing-card', installments: 0, firstInvoiceMonth: '2026-99', category: 'Categoria removida' }), currentInstallment: 13 } as CardPurchase & { currentInstallment: number },
+  ];
+  data.debts = [debt({ id: 'debt-bad', name: 'Acordo', balance: 1000, installmentAmount: 0, installmentsRemaining: 0, dueDate: 'data-invalida' })];
+  data.bankAccounts = [{ id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: Number.NaN }];
+  data.bankBalanceSnapshots = [{ id: 'snap-bad', accountId: 'missing-account', balance: Number.NaN, date: '2026-09-01', monthKey: '2026-08' }];
+  data.scenarios = [{ id: 'scenario-bad', name: 'Cenário', type: 'Atual', incomeOverrides: { 'missing-income': 1000 } }];
+
+  const issues = getDataQualityIssues(data);
+  const projection = projectMonths(data, 2, '2026-08');
+
+  assert.equal(issues.length >= 13, true);
+  assert.equal(issues.some((issue) => issue.title.includes('Notebook') && issue.recordId === 'pur-bad'), true);
+  assert.equal(issues.some((issue) => issue.title.includes('Gasto Prazo') && issue.recordId === 'exp-prazo'), true);
+  assert.equal(issues.some((issue) => issue.title.includes('Cartão ruim') && issue.recordId === 'card-bad'), true);
+  assert.equal(issues.some((issue) => issue.title.includes('Snapshot') && issue.recordId === 'snap-bad'), true);
+  assert.equal(projection.months.every((month) => (
+    Number.isFinite(month.income)
+    && Number.isFinite(month.totalExpenses)
+    && Number.isFinite(month.cardExpenses)
+    && Number.isFinite(month.debtExpenses)
+    && Number.isFinite(month.projectedAccountsBalance)
+  )), true);
+});
+
+test('comparação mensal ignora meses sem dados e trata denominador zero', () => {
+  const data = baseData();
+  data.incomes = [
+    income({ vigencias: [{ id: 'vig-income', amount: 10000, startDate: '2026-05', endDate: null }] }),
+  ];
+  data.expenses = [
+    expense({ id: 'aug-home', category: 'Casa', vigencias: [{ id: 'vig-aug-home', amount: 4000, startDate: '2026-08', endDate: '2026-08' }] }),
+    expense({ id: 'aug-fun', type: 'Pontual', category: 'Lazer', competenceMonth: '2026-08', vigencias: [{ id: 'vig-aug-fun', amount: 2000, startDate: '2026-08', endDate: '2026-08' }] }),
+    expense({ id: 'jul-home', category: 'Casa', vigencias: [{ id: 'vig-jul-home', amount: 3000, startDate: '2026-07', endDate: '2026-07' }] }),
+    expense({ id: 'jun-home', category: 'Casa', vigencias: [{ id: 'vig-jun-home', amount: 1000, startDate: '2026-06', endDate: '2026-06' }] }),
+  ];
+  data.cards = [card()];
+  data.purchases = [
+    purchase({ id: 'aug-card', totalAmount: 1000, installments: 1, firstInvoiceMonth: '2026-08' }),
+  ];
+
+  const comparison = getMonthlyComparisonSummary(data, '2026-08');
+  const byKey = Object.fromEntries(comparison.metrics.map((metric) => [metric.key, metric]));
+
+  assert.equal(byKey.totalExpenses.currentValue, 7000);
+  assert.equal(byKey.totalExpenses.previousMonthValue, 3000);
+  assert.equal(byKey.totalExpenses.average3Value, 2000);
+  assert.equal(byKey.totalExpenses.average3ChangePercent, 250);
+  assert.equal(byKey.cardExpenses.previousMonthChangePercent, null);
+  assert.equal(byKey.savingsRate.currentValue, 30);
+  assert.equal(comparison.categoryTrends.find((item) => item.category === 'Casa')?.average3Value, 2000);
 });
 
 test('status da projeção identifica meses saudáveis, atenção e críticos', () => {

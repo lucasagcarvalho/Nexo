@@ -6,7 +6,9 @@ import type { DebtCommitmentSummary } from './types';
 
 export function debtPaymentForMonth(debt: Debt, monthKey: string): number {
   if (debt.status === 'Quitada') return 0;
+  if (!Number.isFinite(debt.installmentsRemaining) || !Number.isFinite(debt.installmentAmount)) return 0;
   if (debt.installmentsRemaining <= 0 || debt.installmentAmount <= 0) return 0;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(debt.dueDate)) return 0;
   const debtMonth = debt.dueDate.slice(0, 7);
   const endMonth = addMonths(debtMonth, debt.installmentsRemaining - 1);
   return monthKey >= debtMonth && monthKey <= endMonth ? debt.installmentAmount : 0;
@@ -21,17 +23,19 @@ export function getDebtPaymentsForMonth(debts: Debt[], monthKey: string): { debt
 export function totalDebt(data: AppData): number {
   return data.debts
     .filter((debt) => debt.status !== 'Quitada')
-    .reduce((sum, debt) => sum + debt.balance, 0);
+    .reduce((sum, debt) => sum + (Number.isFinite(debt.balance) ? debt.balance : 0), 0);
 }
 
 export function getDebtPayoffMonth(debt: Debt): string | null {
   if (debt.status === 'Quitada') return null;
+  if (!Number.isFinite(debt.installmentsRemaining) || !Number.isFinite(debt.installmentAmount)) return null;
   if (debt.installmentsRemaining <= 0 || debt.installmentAmount <= 0) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(debt.dueDate)) return null;
   return addMonths(debt.dueDate.slice(0, 7), debt.installmentsRemaining - 1);
 }
 
 export function getDebtCommitmentSummary(data: AppData, monthKey: string): DebtCommitmentSummary {
-  const activeDebts = data.debts.filter((debt) => debt.status !== 'Quitada' && debt.balance > 0);
+  const activeDebts = data.debts.filter((debt) => debt.status !== 'Quitada' && Number.isFinite(debt.balance) && debt.balance > 0);
   const income = data.incomes.reduce((sum, income) => sum + incomeAmountForMonth(income, monthKey), 0);
   const debts = activeDebts.map((debt) => ({
     debtId: debt.id,
@@ -39,7 +43,7 @@ export function getDebtCommitmentSummary(data: AppData, monthKey: string): DebtC
     institution: debt.institution,
     status: debt.status,
     currentBalance: debt.balance,
-    monthlyPayment: debt.installmentAmount > 0 && debt.installmentsRemaining > 0 ? debt.installmentAmount : 0,
+    monthlyPayment: Number.isFinite(debt.installmentAmount) && debt.installmentAmount > 0 && debt.installmentsRemaining > 0 ? debt.installmentAmount : 0,
     installmentsRemaining: Math.max(0, debt.installmentsRemaining),
     payoffMonth: getDebtPayoffMonth(debt),
     interestRate: debt.interestRate && debt.interestRate > 0 ? debt.interestRate : null,

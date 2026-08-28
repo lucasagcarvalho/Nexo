@@ -6,7 +6,7 @@ import { getCardMonthlyLimit, purchaseInstallmentForMonth } from './cardRules';
 import { getExceededCategoryBudgets } from './categoryBudgetRules';
 import { debtPaymentForMonth } from './debtRules';
 import { expenseAmountForMonth } from './expenseRules';
-import type { FinancialAlert, FinancialAlertSeverity, FinancialHealthIndicator, FinancialHealthIndicatorStatus, MonthHealthStatus, MonthProjection, ProjectionHorizonSummary, ProjectionResult } from './types';
+import type { CategoryTrend, FinancialAlert, FinancialAlertSeverity, FinancialHealthIndicator, FinancialHealthIndicatorStatus, MonthlyComparisonMetric, MonthlyComparisonMetricKey, MonthlyComparisonSummary, MonthHealthStatus, MonthProjection, ProjectionHorizonSummary, ProjectionResult } from './types';
 
 export function projectMonths(data: AppData, count = 360, startMonth?: string): ProjectionResult {
   const start = startMonth ?? currentMonthKey();
@@ -184,6 +184,98 @@ export function getFinancialHealthIndicators(data: AppData, projection: Projecti
       range: 'Bom: igual ou abaixo da média. Atenção: acima da média. Crítico: 15% ou mais acima.',
     },
   ];
+}
+
+export function getMonthlyComparisonSummary(data: AppData, monthKey: string): MonthlyComparisonSummary {
+  const current = projectMonths(data, 1, monthKey).months[0];
+  const previousMonth = getComparisonMonth(data, addMonths(monthKey, -1));
+  const previous3 = getPreviousComparisonMonths(data, monthKey, 3);
+  const previous6 = getPreviousComparisonMonths(data, monthKey, 6);
+  const metricDefinitions: { key: MonthlyComparisonMetricKey; label: string; unit: 'currency' | 'percent'; value: (month: MonthProjection) => number }[] = [
+    { key: 'income', label: 'Receita', unit: 'currency', value: (month) => month.income },
+    { key: 'totalExpenses', label: 'Gastos totais', unit: 'currency', value: (month) => month.totalExpenses },
+    { key: 'cardExpenses', label: 'Cartões', unit: 'currency', value: (month) => month.cardExpenses },
+    { key: 'essentialExpenses', label: 'Gastos essenciais', unit: 'currency', value: (month) => month.essentialExpenses },
+    { key: 'nonEssentialExpenses', label: 'Gastos não essenciais', unit: 'currency', value: (month) => month.discretionaryExpenses + month.otherExpenses },
+    { key: 'savingsRate', label: 'Taxa de poupança', unit: 'percent', value: savingsRateForMonth },
+  ];
+
+  const metrics = metricDefinitions.map<MonthlyComparisonMetric>((definition) => {
+    const currentValue = definition.value(current);
+    const previousMonthValue = previousMonth ? definition.value(previousMonth) : null;
+    const average3Value = averageMetric(previous3, definition.value);
+    const average6Value = averageMetric(previous6, definition.value);
+
+    return {
+      key: definition.key,
+      label: definition.label,
+      currentValue,
+      previousMonthValue,
+      previousMonthChangePercent: percentChange(currentValue, previousMonthValue),
+      average3Value,
+      average3ChangePercent: percentChange(currentValue, average3Value),
+      average6Value,
+      average6ChangePercent: percentChange(currentValue, average6Value),
+      unit: definition.unit,
+    };
+  });
+
+  return {
+    monthKey,
+    metrics,
+    categoryTrends: getCategoryTrends(current, previous3),
+  };
+}
+
+function getComparisonMonth(data: AppData, monthKey: string): MonthProjection | null {
+  const month = projectMonths(data, 1, monthKey).months[0];
+  return hasComparisonData(month) ? month : null;
+}
+
+function getPreviousComparisonMonths(data: AppData, monthKey: string, count: number): MonthProjection[] {
+  const months: MonthProjection[] = [];
+  for (let i = 1; i <= count; i++) {
+    const month = getComparisonMonth(data, addMonths(monthKey, -i));
+    if (month) months.push(month);
+  }
+  return months;
+}
+
+function hasComparisonData(month: MonthProjection): boolean {
+  return month.income > 0 || month.totalExpenses > 0 || Object.keys(month.categoryBreakdown).length > 0;
+}
+
+function savingsRateForMonth(month: MonthProjection): number {
+  return month.income > 0 ? (month.balance / month.income) * 100 : 0;
+}
+
+function averageMetric(months: MonthProjection[], value: (month: MonthProjection) => number): number | null {
+  const values = months.map(value).filter((item) => item !== 0);
+  if (values.length === 0) return null;
+  return values.reduce((sum, item) => sum + item, 0) / values.length;
+}
+
+function percentChange(currentValue: number, referenceValue: number | null): number | null {
+  if (referenceValue === null || referenceValue === 0) return null;
+  return ((currentValue - referenceValue) / Math.abs(referenceValue)) * 100;
+}
+
+function getCategoryTrends(current: MonthProjection, previousMonths: MonthProjection[]): CategoryTrend[] {
+  return Object.entries(current.categoryBreakdown)
+    .map(([category, currentValue]) => {
+      const values = previousMonths
+        .map((month) => month.categoryBreakdown[category] ?? 0)
+        .filter((value) => value > 0);
+      const average3Value = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+      return {
+        category,
+        currentValue,
+        average3Value,
+        average3ChangePercent: percentChange(currentValue, average3Value),
+      };
+    })
+    .sort((a, b) => b.currentValue - a.currentValue)
+    .slice(0, 8);
 }
 
 function statusByMinimum(value: number, goodAt: number, warningAt: number): FinancialHealthIndicatorStatus {

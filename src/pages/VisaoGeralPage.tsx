@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, TrendingDown, TrendingUp } from 'lucide-react';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { projectMonths } from '@/lib/projection';
-import { formatCurrency, monthLabelShort, formatMonthBR } from '@/lib/format';
-import { Card, Modal } from '@/components/ui';
+import { getMonthlyComparisonSummary, projectMonths } from '@/lib/projection';
+import { formatCurrency, formatPercent, monthLabelShort, formatMonthBR } from '@/lib/format';
+import { Badge, Card, Modal } from '@/components/ui';
+import type { MonthlyComparisonMetric } from '@/lib/projection';
 
 type MonthStatus = 'saudavel' | 'atencao' | 'critico';
 
@@ -28,6 +29,7 @@ export function VisaoGeralPage() {
   const [detailMonth, setDetailMonth] = useState<string | null>(null);
 
   const projection = useMemo(() => projectMonths(data, 24, selectedMonth), [data, selectedMonth]);
+  const comparison = useMemo(() => getMonthlyComparisonSummary(data, selectedMonth), [data, selectedMonth]);
   const months = projection.months.slice(0, range);
 
   const selectedData = months.find((m) => m.monthKey === detailMonth);
@@ -58,6 +60,35 @@ export function VisaoGeralPage() {
         <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Atenção</div>
         <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Crítico</div>
       </div>
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-gray-100 p-4">
+          <h2 className="text-sm font-semibold text-gray-700">Comparação mensal · {formatMonthBR(selectedMonth)}</h2>
+          <p className="text-xs text-gray-400 mt-1">Mês atual contra mês anterior, média de 3 meses e média de 6 meses.</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 p-4">
+          {comparison.metrics.map((metric) => (
+            <ComparisonMetricCard key={metric.key} metric={metric} />
+          ))}
+        </div>
+      </Card>
+
+      {comparison.categoryTrends.length > 0 && (
+        <Card className="p-4">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">Tendência por categoria</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {comparison.categoryTrends.map((category) => (
+              <div key={category.category} className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-700 truncate">{category.category}</p>
+                  <p className="text-xs text-gray-400">Atual: {formatCurrency(category.currentValue)} · Média 3m: {category.average3Value === null ? 'sem base' : formatCurrency(category.average3Value)}</p>
+                </div>
+                <TrendBadge value={category.average3ChangePercent} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -171,5 +202,54 @@ function DetailBox({ label, value, color }: { label: string; value: string; colo
       <p className="text-xs text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${colors[color]}`}>{value}</p>
     </div>
+  );
+}
+
+function ComparisonMetricCard({ metric }: { metric: MonthlyComparisonMetric }) {
+  const formatValue = (value: number | null) => {
+    if (value === null) return 'sem base';
+    return metric.unit === 'percent' ? formatPercent(value) : formatCurrency(value);
+  };
+
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-xs text-gray-400">{metric.label}</p>
+          <p className="text-lg font-bold text-gray-900">{formatValue(metric.currentValue)}</p>
+        </div>
+        <TrendBadge value={metric.average3ChangePercent} />
+      </div>
+      <div className="mt-3 space-y-1 text-xs">
+        <ComparisonLine label="Mês anterior" reference={formatValue(metric.previousMonthValue)} change={metric.previousMonthChangePercent} />
+        <ComparisonLine label="Média 3 meses" reference={formatValue(metric.average3Value)} change={metric.average3ChangePercent} />
+        <ComparisonLine label="Média 6 meses" reference={formatValue(metric.average6Value)} change={metric.average6ChangePercent} />
+      </div>
+    </div>
+  );
+}
+
+function ComparisonLine({ label, reference, change }: { label: string; reference: string; change: number | null }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-gray-400">{label}: {reference}</span>
+      <TrendBadge value={change} compact />
+    </div>
+  );
+}
+
+function TrendBadge({ value, compact = false }: { value: number | null; compact?: boolean }) {
+  if (value === null) return <Badge color="gray">sem base</Badge>;
+  const positive = value > 0;
+  const neutral = Math.abs(value) < 0.01;
+  const color = neutral ? 'gray' : positive ? 'yellow' : 'green';
+  const Icon = positive ? TrendingUp : TrendingDown;
+  return (
+    <Badge color={color}>
+      <span className="inline-flex items-center gap-1">
+        {!compact && !neutral && <Icon size={12} />}
+        {positive ? '+' : ''}{formatPercent(value)}
+      </span>
+    </Badge>
   );
 }

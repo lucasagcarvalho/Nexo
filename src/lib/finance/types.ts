@@ -146,3 +146,48 @@ export interface DebtCommitmentSummary {
   averageInterestRate: number | null;
   debts: DebtCommitmentItem[];
 }
+
+export type DataQualitySeverity = 'warning' | 'critical';
+
+export interface DataQualityIssue {
+  id: string;
+  severity: DataQualitySeverity;
+  entity: string;
+  recordId: string;
+  title: string;
+  description: string;
+}
+
+export type MonthlyComparisonMetricKey =
+  | 'income'
+  | 'totalExpenses'
+  | 'cardExpenses'
+  | 'essentialExpenses'
+  | 'nonEssentialExpenses'
+  | 'savingsRate';
+
+export interface MonthlyComparisonMetric {
+  key: MonthlyComparisonMetricKey;
+  label: string;
+  currentValue: number;
+  previousMonthValue: number | null;
+  previousMonthChangePercent: number | null;
+  average3Value: number | null;
+  average3ChangePercent: number | null;
+  average6Value: number | null;
+  average6ChangePercent: number | null;
+  unit: 'currency' | 'percent';
+}
+
+export interface CategoryTrend {
+  category: string;
+  currentValue: number;
+  average3Value: number | null;
+  average3ChangePercent: number | null;
+}
+
+export interface MonthlyComparisonSummary {
+  monthKey: string;
+  metrics: MonthlyComparisonMetric[];
+  categoryTrends: CategoryTrend[];
+}
