@@ -1,7 +1,8 @@
 import type { AppData, CardPurchase, CreditCard, Settings } from '../types';
 import { addMonths, currentMonthKey, generateMonthKeys } from '../format';
 import { getActiveVigencia } from './vigenciaRules';
-import type { InvoiceItem, InvoiceStatus, PurchaseStatus } from './types';
+import { incomeAmountForMonth } from './incomeRules';
+import type { CardCommitmentSummary, InvoiceItem, InvoiceStatus, PurchaseStatus } from './types';
 
 export function monthIndex(key: string): number {
   const [y, m] = key.split('-').map(Number);
@@ -155,4 +156,44 @@ export function getInvoiceStatus(
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   if (dueDate < today) return 'vencido';
   return 'pendente';
+}
+
+export function getCardCommitmentSummary(data: AppData, monthKey: string): CardCommitmentSummary {
+  const income = data.incomes.reduce((sum, income) => sum + incomeAmountForMonth(income, monthKey), 0);
+  const cards = data.cards.map((card) => {
+    const utilization = cardUtilization(data, card, monthKey);
+    const highestInvoiceNextSixMonths = generateMonthKeys(monthKey, 6).reduce(
+      (highest, targetMonth) => Math.max(highest, getCardInvoiceForMonth(data.purchases, card.id, targetMonth)),
+      0,
+    );
+
+    return {
+      cardId: card.id,
+      limit: card.limit,
+      committedLimit: utilization.used,
+      availableLimit: utilization.available,
+      currentInvoice: utilization.currentInvoice,
+      nextInvoice: utilization.nextInvoice,
+      futureInstallments: utilization.futureInstallments,
+      highestInvoiceNextSixMonths,
+    };
+  });
+
+  const totalLimit = cards.reduce((sum, card) => sum + card.limit, 0);
+  const totalCommittedLimit = cards.reduce((sum, card) => sum + card.committedLimit, 0);
+  const totalAvailableLimit = cards.reduce((sum, card) => sum + card.availableLimit, 0);
+  const currentInvoiceTotal = cards.reduce((sum, card) => sum + card.currentInvoice, 0);
+  const futureInstallmentsTotal = cards.reduce((sum, card) => sum + card.futureInstallments, 0);
+
+  return {
+    cards,
+    totalLimit,
+    totalCommittedLimit,
+    totalAvailableLimit,
+    currentInvoiceTotal,
+    futureInstallmentsTotal,
+    currentInvoiceIncomePercent: income > 0 ? (currentInvoiceTotal / income) * 100 : 0,
+    futureInstallmentsIncomePercent: income > 0 ? (futureInstallmentsTotal / income) * 100 : 0,
+    totalLimitUsedPercent: totalLimit > 0 ? (totalCommittedLimit / totalLimit) * 100 : 0,
+  };
 }

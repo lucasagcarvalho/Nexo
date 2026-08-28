@@ -3,8 +3,8 @@ import { Plus, Edit2, Trash2, Copy, CreditCard as CreditCardIcon, ArrowLeft, Ale
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, getCardMonthlyLimit, type InvoiceStatus } from '@/lib/projection';
-import { formatCurrency, monthLabelShort, monthShort, formatMonthBR, addMonths } from '@/lib/format';
+import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, getCardMonthlyLimit, getCardCommitmentSummary, type InvoiceStatus } from '@/lib/projection';
+import { formatCurrency, monthLabelShort, monthShort, formatMonthBR, addMonths, formatPercent } from '@/lib/format';
 import type { CreditCard, CardPurchase } from '@/lib/types';
 import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, ProgressBar, EmptyState, CurrencyInput, PersonSelect, IconButton } from '@/components/ui';
 
@@ -23,6 +23,7 @@ export function CartoesPage() {
   });
 
   const selectedCard = data.cards.find((c) => c.id === selectedCardId);
+  const commitmentSummary = useMemo(() => getCardCommitmentSummary(data, selectedMonth), [data, selectedMonth]);
 
   if (selectedCard) {
     return <CardDetail card={selectedCard} onBack={() => setSelectedCardId(null)} />;
@@ -62,6 +63,26 @@ export function CartoesPage() {
 
       <CardMonthlyLimitEditor />
 
+      {data.cards.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="p-3">
+            <p className="text-xs text-gray-400">Fatura / renda</p>
+            <p className={`text-lg font-bold ${commitmentSummary.currentInvoiceIncomePercent >= 35 ? 'text-rose-600' : 'text-gray-900'}`}>{formatPercent(commitmentSummary.currentInvoiceIncomePercent)}</p>
+            <p className="text-xs text-gray-400 mt-1">{formatCurrency(commitmentSummary.currentInvoiceTotal)} em faturas</p>
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-gray-400">Parcelas futuras / renda</p>
+            <p className={`text-lg font-bold ${commitmentSummary.futureInstallmentsIncomePercent >= 35 ? 'text-amber-600' : 'text-gray-900'}`}>{formatPercent(commitmentSummary.futureInstallmentsIncomePercent)}</p>
+            <p className="text-xs text-gray-400 mt-1">{formatCurrency(commitmentSummary.futureInstallmentsTotal)} já comprometidos</p>
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-gray-400">Limite utilizado total</p>
+            <p className={`text-lg font-bold ${commitmentSummary.totalLimitUsedPercent >= 80 ? 'text-rose-600' : commitmentSummary.totalLimitUsedPercent >= 50 ? 'text-amber-600' : 'text-emerald-600'}`}>{formatPercent(commitmentSummary.totalLimitUsedPercent)}</p>
+            <p className="text-xs text-gray-400 mt-1">{formatCurrency(commitmentSummary.totalCommittedLimit)} de {formatCurrency(commitmentSummary.totalLimit)}</p>
+          </Card>
+        </div>
+      )}
+
       {data.cards.length === 0 ? (
         <Card className="p-8">
           <EmptyState icon={<CreditCardIcon size={48} />} title="Nenhum cartão cadastrado" message="Adicione seu primeiro cartão de crédito para começar a controlar suas faturas e compras parceladas." action={<Button onClick={openAddCard}><Plus size={16} className="inline mr-1" /> Adicionar primeiro cartão</Button>} />
@@ -70,6 +91,7 @@ export function CartoesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {data.cards.map((card) => {
             const util = cardUtilization(data, card, selectedMonth);
+            const indicators = commitmentSummary.cards.find((item) => item.cardId === card.id);
             const utilPct = card.limit > 0 ? (util.used / card.limit) * 100 : 0;
             const color = utilPct > 80 ? 'red' : utilPct > 50 ? 'yellow' : 'green';
             return (
@@ -101,6 +123,7 @@ export function CartoesPage() {
                   )}
                   <div className="flex justify-between text-sm"><span className="text-gray-400">Próxima fatura</span><span className="font-medium text-gray-700">{formatCurrency(util.nextInvoice)}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-400">Parcelado futuro</span><span className="font-medium text-amber-600">{formatCurrency(util.futureInstallments)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">Maior fatura 6m</span><span className="font-medium text-blue-600">{formatCurrency(indicators?.highestInvoiceNextSixMonths ?? 0)}</span></div>
                   <div className="pt-1">
                     <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Utilizado</span><span className="text-gray-600">{formatCurrency(util.used)} ({utilPct.toFixed(0)}%)</span></div>
                     <ProgressBar value={util.used} max={card.limit} color={color} />
@@ -170,6 +193,7 @@ export function CartoesPage() {
 
     const projection = useMemo(() => cardProjection(data, card, 12, selectedMonth), [data, card, selectedMonth]);
     const util = useMemo(() => cardUtilization(data, card, selectedMonth), [data, card, selectedMonth]);
+    const cardCommitment = useMemo(() => getCardCommitmentSummary(data, selectedMonth).cards.find((item) => item.cardId === card.id), [data, card.id, selectedMonth]);
     const cardPurchases = data.purchases.filter((p) => p.cardId === card.id);
     const utilPct = card.limit > 0 ? (util.used / card.limit) * 100 : 0;
     const color = utilPct > 80 ? 'red' : utilPct > 50 ? 'yellow' : 'green';
@@ -248,10 +272,13 @@ export function CartoesPage() {
 
         {/* Card info */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="p-3"><p className="text-xs text-gray-400">Limite</p><p className="text-lg font-bold text-gray-900">{formatCurrency(card.limit)}</p></Card>
+          <Card className="p-3"><p className="text-xs text-gray-400">Limite total</p><p className="text-lg font-bold text-gray-900">{formatCurrency(card.limit)}</p></Card>
+          <Card className="p-3"><p className="text-xs text-gray-400">Limite comprometido</p><p className="text-lg font-bold text-amber-600">{formatCurrency(cardCommitment?.committedLimit ?? util.used)}</p></Card>
           <Card className="p-3"><p className="text-xs text-gray-400">Fatura de {formatMonthBR(selectedMonth)}</p><p className="text-lg font-bold text-gray-900">{formatCurrency(util.currentInvoice)}</p></Card>
           <Card className="p-3"><p className="text-xs text-gray-400">Próxima fatura</p><p className="text-lg font-bold text-gray-900">{formatCurrency(util.nextInvoice)}</p></Card>
-          <Card className="p-3"><p className="text-xs text-gray-400">Disponível</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(util.available)}</p></Card>
+          <Card className="p-3"><p className="text-xs text-gray-400">Limite disponível</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(util.available)}</p></Card>
+          <Card className="p-3"><p className="text-xs text-gray-400">Parcelas futuras</p><p className="text-lg font-bold text-amber-600">{formatCurrency(util.futureInstallments)}</p></Card>
+          <Card className="p-3"><p className="text-xs text-gray-400">Maior fatura 6m</p><p className="text-lg font-bold text-blue-600">{formatCurrency(cardCommitment?.highestInvoiceNextSixMonths ?? 0)}</p></Card>
         </div>
 
         {/* Invoice status + pay button */}

@@ -75,3 +75,26 @@ export interface PurchaseStatus {
 }
 
 export type InvoiceStatus = 'pago' | 'pendente' | 'vencido' | 'sem_fatura';
+
+export interface CardCommitmentIndicator {
+  cardId: string;
+  limit: number;
+  committedLimit: number;
+  availableLimit: number;
+  currentInvoice: number;
+  nextInvoice: number;
+  futureInstallments: number;
+  highestInvoiceNextSixMonths: number;
+}
+
+export interface CardCommitmentSummary {
+  cards: CardCommitmentIndicator[];
+  totalLimit: number;
+  totalCommittedLimit: number;
+  totalAvailableLimit: number;
+  currentInvoiceTotal: number;
+  futureInstallmentsTotal: number;
+  currentInvoiceIncomePercent: number;
+  futureInstallmentsIncomePercent: number;
+  totalLimitUsedPercent: number;
+}

@@ -5,6 +5,7 @@ import type { AppData, CardPurchase, CreditCard, Debt, Expense, Income } from '.
 import { addMonths, currentMonthKey } from '../src/lib/format';
 import {
   cardInvoiceDetail,
+  getCardCommitmentSummary,
   cardUtilization,
   getCategoryBudgetUsages,
   debtPaymentForMonth,
@@ -552,6 +553,36 @@ test('limite disponível do cartão libera parcela paga somente no mês seguinte
 
   assert.equal(cardUtilization(data, data.cards[0], '2026-08').available, 1000);
   assert.equal(cardUtilization(data, data.cards[0], '2026-09').available, 1400);
+});
+
+test('indicadores de comprometimento do cartão separam limite, fatura e renda', () => {
+  const data = baseData();
+  data.incomes = [income({ vigencias: [{ id: 'vig-income', amount: 5000, startDate: '2026-08', endDate: null }] })];
+  data.cards = [card({ limit: 3000 })];
+  data.purchases = [
+    purchase({ id: 'current', totalAmount: 900, installments: 3, firstInvoiceMonth: '2026-08' }),
+    purchase({ id: 'next', totalAmount: 1200, installments: 2, firstInvoiceMonth: '2026-09' }),
+  ];
+
+  const summary = getCardCommitmentSummary(data, '2026-08');
+  const cardSummary = summary.cards[0];
+
+  assert.equal(cardSummary.limit, 3000);
+  assert.equal(cardSummary.currentInvoice, 300);
+  assert.equal(cardSummary.nextInvoice, 900);
+  assert.equal(cardSummary.futureInstallments, 900);
+  assert.equal(cardSummary.highestInvoiceNextSixMonths, 900);
+  assert.equal(cardSummary.committedLimit, 2100);
+  assert.equal(cardSummary.availableLimit, 900);
+  assert.equal(summary.currentInvoiceIncomePercent, 6);
+  assert.equal(summary.futureInstallmentsIncomePercent, 18);
+  assert.equal(summary.totalLimitUsedPercent, 70);
+
+  data.cardInvoiceStatus = { [invoiceStatusKey('card-1', '2026-08')]: true };
+
+  const nextMonthSummary = getCardCommitmentSummary(data, '2026-09').cards[0];
+  assert.equal(nextMonthSummary.committedLimit, 1800);
+  assert.equal(nextMonthSummary.availableLimit, 1200);
 });
 
 test('dívidas ativa, quitada, última parcela e zerada respeitam regra mensal', () => {
