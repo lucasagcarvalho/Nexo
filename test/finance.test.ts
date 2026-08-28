@@ -763,3 +763,151 @@ test('contas usam snapshot histórico, saldo atual e projeção futura', () => {
   assert.equal(futureProjection.accountsBalance, 1500);
   assert.equal(futureProjection.projectedAccountsBalance, 1750);
 });
+
+test('auditoria controlada mantém Dashboard, Planejamento, Cartões, Projeção, Contas, Alertas e Indicadores coerentes', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-main', bank: 'Banco', name: 'Conta principal', holder: 'Lucas', balance: 5000 },
+  ];
+  data.incomes = [
+    income({
+      id: 'salary',
+      name: 'Salário',
+      vigencias: [{ id: 'vig-salary', amount: 10000, startDate: '2026-08', endDate: null }],
+    }),
+    income({
+      id: 'extra-sep',
+      name: 'Extra setembro',
+      type: 'Trabalho extra',
+      kind: 'variavel',
+      competenceMonth: '2026-09',
+      vigencias: [{ id: 'vig-extra-sep', amount: 1000, startDate: '2026-09', endDate: '2026-09' }],
+    }),
+  ];
+  data.expenses = [
+    expense({
+      id: 'rent',
+      description: 'Aluguel',
+      category: 'Moradia',
+      vigencias: [{ id: 'vig-rent', amount: 2000, startDate: '2026-08', endDate: null }],
+    }),
+    expense({
+      id: 'internet',
+      description: 'Internet',
+      category: 'Serviços',
+      vigencias: [{ id: 'vig-internet', amount: 150, startDate: '2026-08', endDate: null }],
+    }),
+    expense({
+      id: 'course',
+      description: 'Curso',
+      category: 'Educação',
+      type: 'Prazo',
+      vigencias: [{ id: 'vig-course', amount: 500, startDate: '2026-08', endDate: '2026-10' }],
+    }),
+    expense({
+      id: 'insurance',
+      description: 'Seguro',
+      category: 'Serviços',
+      type: 'Pontual',
+      competenceMonth: '2026-09',
+      vigencias: [{ id: 'vig-insurance', amount: 900, startDate: '2026-09', endDate: '2026-09' }],
+    }),
+  ];
+  data.cards = [card({ id: 'card-1', name: 'Nubank', limit: 3000 })];
+  data.purchases = [
+    purchase({
+      id: 'notebook',
+      cardId: 'card-1',
+      name: 'Notebook',
+      totalAmount: 3000,
+      installments: 6,
+      purchaseDate: '2026-08-01',
+      firstInvoiceMonth: '2026-08',
+      category: 'Informática',
+    }),
+  ];
+  data.debts = [
+    debt({
+      id: 'debt-audit',
+      name: 'Acordo',
+      balance: 2100,
+      installmentAmount: 700,
+      installmentsRemaining: 3,
+      dueDate: '2026-08-15',
+      status: 'Parcelada',
+    }),
+  ];
+
+  const projection = projectMonths(data, 4, '2026-08');
+  const expectedMonths = [
+    { monthKey: '2026-08', income: 10000, fixedExpenses: 2150, prazoExpenses: 500, variableExpenses: 0, cardExpenses: 500, debtExpenses: 700, totalExpenses: 3850, balance: 6150, projectedAccountsBalance: 5000 },
+    { monthKey: '2026-09', income: 11000, fixedExpenses: 2150, prazoExpenses: 500, variableExpenses: 900, cardExpenses: 500, debtExpenses: 700, totalExpenses: 4750, balance: 6250, projectedAccountsBalance: 11250 },
+    { monthKey: '2026-10', income: 10000, fixedExpenses: 2150, prazoExpenses: 500, variableExpenses: 0, cardExpenses: 500, debtExpenses: 700, totalExpenses: 3850, balance: 6150, projectedAccountsBalance: 17400 },
+    { monthKey: '2026-11', income: 10000, fixedExpenses: 2150, prazoExpenses: 0, variableExpenses: 0, cardExpenses: 500, debtExpenses: 0, totalExpenses: 2650, balance: 7350, projectedAccountsBalance: 24750 },
+  ];
+
+  for (const [index, expected] of expectedMonths.entries()) {
+    assert.deepEqual(
+      {
+        monthKey: projection.months[index].monthKey,
+        income: projection.months[index].income,
+        fixedExpenses: projection.months[index].fixedExpenses,
+        prazoExpenses: projection.months[index].prazoExpenses,
+        variableExpenses: projection.months[index].variableExpenses,
+        cardExpenses: projection.months[index].cardExpenses,
+        debtExpenses: projection.months[index].debtExpenses,
+        totalExpenses: projection.months[index].totalExpenses,
+        balance: projection.months[index].balance,
+        projectedAccountsBalance: projection.months[index].projectedAccountsBalance,
+      },
+      expected,
+    );
+  }
+
+  const planningSeptember = getPlanningMonthDetails(data, '2026-09');
+  assert.equal(planningSeptember.summary.totalExpenses, 4750);
+  assert.equal(planningSeptember.fixedExpenses.reduce((sum, item) => sum + item.amount, 0), 2150);
+  assert.equal(planningSeptember.prazoExpenses.reduce((sum, item) => sum + item.amount, 0), 500);
+  assert.equal(planningSeptember.pontualExpenses.reduce((sum, item) => sum + item.amount, 0), 900);
+  assert.equal(planningSeptember.cards.reduce((sum, item) => sum + item.amount, 0), 500);
+  assert.equal(planningSeptember.debts.reduce((sum, item) => sum + item.amount, 0), 700);
+
+  const cardSummary = getCardCommitmentSummary(data, '2026-08');
+  const cardDetail = cardInvoiceDetail(data, 'card-1', '2026-11');
+  const cardUsage = cardUtilization(data, data.cards[0], '2026-08');
+  assert.equal(cardSummary.currentInvoiceTotal, 500);
+  assert.equal(cardSummary.futureInstallmentsTotal, 2000);
+  assert.equal(cardSummary.currentInvoiceIncomePercent, 5);
+  assert.equal(cardSummary.totalLimitUsedPercent, 100);
+  assert.equal(cardDetail[0].installmentNumber, 4);
+  assert.equal(cardDetail[0].amount, 500);
+  assert.equal(cardUsage.available, 0);
+
+  const debtSummary = getDebtCommitmentSummary(data, '2026-08');
+  assert.equal(debtSummary.totalBalance, 2100);
+  assert.equal(debtSummary.monthlyPaymentTotal, 700);
+  assert.equal(Math.round(debtSummary.incomeCommitmentPercent * 100) / 100, 7);
+  assert.equal(debtSummary.payoffMonth, '2026-10');
+
+  const accountSnapshot = getAccountBalanceSnapshotForMonth(data, '2026-08');
+  assert.equal(accountSnapshot, null);
+  assert.equal(projectAccountBalance(data, '2026-09', 6250, 5000).projectedAccountsBalance, 11250);
+
+  const alerts = generateAlerts(data, projection);
+  assert.equal(alerts.some((alert) => alert.type === 'negative-month'), false);
+  assert.equal(alerts.some((alert) => alert.type === 'card-income-share'), false);
+  assert.equal(alerts.some((alert) => alert.type === 'debt-income-share'), false);
+  assert.equal(alerts.some((alert) => alert.type === 'low-reserve'), true);
+
+  const health = getFinancialHealthIndicators(data, projection);
+  assert.equal(health.find((item) => item.id === 'savings-rate')?.value, 61.5);
+  assert.equal(health.find((item) => item.id === 'fixed-commitment')?.value, 33.5);
+  assert.equal(health.find((item) => item.id === 'card-commitment')?.value, 5);
+
+  const horizon = getProjectionHorizonSummaries(data, projection, [3])[0];
+  assert.equal(horizon.lowestProjectedAccountsBalance, 5000);
+  assert.equal(horizon.negativeMonths, 0);
+  assert.equal(horizon.highestCardInvoice, 500);
+  assert.equal(horizon.plannedSavings, 9275);
+  assert.deepEqual(getDataQualityIssues(data), []);
+});

@@ -3,7 +3,7 @@ import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon,
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Area, AreaChart } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { getCategoryBudgetUsages, projectMonths, generateAlerts, recoveryProgress, cardUtilization, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
+import { cardInvoiceDetail, getCategoryBudgetUsages, getPlanningMonthDetails, projectMonths, generateAlerts, recoveryProgress, cardUtilization, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
 import { formatCurrency, formatPercent, monthLabelShort, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
@@ -12,7 +12,7 @@ import type { FinancialHealthIndicator } from '@/lib/projection';
 const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#6B7280'];
 
 export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void }) {
-  const { data } = useData();
+  const { data, isInvoicePaid } = useData();
   const { selectedMonth } = useMonth();
   const [detailModal, setDetailModal] = useState<{ title: string; content: React.ReactNode } | null>(null);
 
@@ -21,6 +21,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const recovery = useMemo(() => recoveryProgress(data, projection), [data, projection]);
   const healthIndicators = useMemo(() => getFinancialHealthIndicators(data, projection), [data, projection]);
   const horizonSummaries = useMemo(() => getProjectionHorizonSummaries(data, projection), [data, projection]);
+  const planning = useMemo(() => getPlanningMonthDetails(data, selectedMonth), [data, selectedMonth]);
   const current = projection.months[0];
   const bankBalance = totalBankBalance(data);
   const categoryBudgetUsages = useMemo(() => getCategoryBudgetUsages(data, selectedMonth), [data, selectedMonth]);
@@ -86,8 +87,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   }));
 
   const showBankDetail = () => {
+    const projectedFlow = current.projectedAccountsBalance - bankBalance;
     setDetailModal({
-      title: `Composição do Saldo · ${formatMonthBR(selectedMonth)}`,
+      title: `Saldo projetado nas contas · ${formatMonthBR(selectedMonth)}`,
       content: (
         <div className="space-y-3">
           {data.bankAccounts.map((acc) => (
@@ -99,13 +101,141 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
               <span className={`text-sm font-bold ${acc.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(acc.balance)}</span>
             </div>
           ))}
+          {projectedFlow !== 0 && (
+            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+              <span className="text-sm font-medium text-blue-700">Fluxo projetado até o mês</span>
+              <span className={`text-sm font-bold ${projectedFlow >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{formatCurrency(projectedFlow)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
-            <span className="text-sm font-medium text-emerald-700">Saldo total</span>
-            <span className={`text-sm font-bold ${bankBalance >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>{formatCurrency(bankBalance)}</span>
+            <span className="text-sm font-medium text-emerald-700">Saldo projetado nas contas</span>
+            <span className={`text-sm font-bold ${current.projectedAccountsBalance >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>{formatCurrency(current.projectedAccountsBalance)}</span>
           </div>
         </div>
       ),
     });
+  };
+
+  const openDetail = (title: string, content: React.ReactNode) => {
+    setDetailModal({ title, content });
+  };
+
+  const showIncomeDetail = () => {
+    openDetail(`Receitas · ${formatMonthBR(selectedMonth)}`, (
+      <DrillDownList
+        items={planning.incomes.map(({ income, amount }) => ({
+          id: income.id,
+          label: income.name,
+          meta: `${income.type} · ${income.person || 'Sem responsável'}`,
+          amount,
+          colorClass: 'text-emerald-600',
+        }))}
+        totalLabel="Total receitas"
+        total={current.income}
+      />
+    ));
+  };
+
+  const showExpensesDetail = (title: string, mode: 'expected' | 'realized' | 'unpaid') => {
+    const isExpensePaidForMonth = (expense: { paidMonths?: Record<string, boolean> }) => expense.paidMonths?.[selectedMonth] ?? false;
+    const direct = planning.expenses.map(({ expense, amount }) => ({
+      id: expense.id,
+      label: expense.description,
+      meta: `${expense.category} · ${expense.type} · ${isExpensePaidForMonth(expense) ? 'Pago' : 'Pendente'}`,
+      amount,
+      category: expense.category,
+      paid: isExpensePaidForMonth(expense),
+    }));
+    const cards = planning.cards.map(({ cardId, amount }) => {
+      const card = data.cards.find((item) => item.id === cardId);
+      return {
+        id: `card-${cardId}`,
+        label: `Cartão ${card?.name ?? cardId}`,
+        meta: 'Fatura de cartão',
+        amount,
+        category: 'Cartões',
+        paid: isInvoicePaid(cardId, selectedMonth),
+      };
+    });
+    const debts = planning.debts.map(({ debt, amount }) => ({
+      id: debt.id,
+      label: debt.name,
+      meta: `${debt.institution || 'Dívida'} · ${debt.installmentsRemaining}x restantes`,
+      amount,
+      category: 'Dívidas',
+      paid: false,
+    }));
+    const entries = [...direct, ...cards, ...debts].filter((item) => mode !== 'unpaid' || !item.paid);
+    const total = mode === 'expected' ? current.expectedExpenses : mode === 'realized' ? current.realizedExpenses : current.unpaidExpenses;
+    openDetail(`${title} · ${formatMonthBR(selectedMonth)}`, (
+      <div className="space-y-4">
+        <CategorySummary
+          entries={entries}
+          onCategoryClick={(category) => showCategoryDetail(category)}
+        />
+        <DrillDownList
+          items={entries.map((item) => ({
+            id: item.id,
+            label: item.label,
+            meta: item.meta,
+            amount: item.amount,
+            colorClass: mode === 'unpaid' ? 'text-amber-600' : 'text-rose-600',
+          }))}
+          totalLabel="Total"
+          total={total}
+        />
+      </div>
+    ));
+  };
+
+  const showBalanceDetail = () => {
+    openDetail(`Saldo previsto · ${formatMonthBR(selectedMonth)}`, (
+      <div className="space-y-2">
+        <DetailRow label="Receitas" amount={current.income} colorClass="text-emerald-600" />
+        <DetailRow label="Despesas previstas" amount={-current.expectedExpenses} colorClass="text-rose-600" />
+        <DetailRow label="Saldo previsto" amount={current.balance} colorClass={current.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'} strong />
+      </div>
+    ));
+  };
+
+  const showCategoryDetail = (category: string) => {
+    const includeAllCards = category === 'Cartões';
+    const direct = planning.expenses
+      .filter(({ expense }) => expense.category === category)
+      .map(({ expense, amount }) => ({
+        id: expense.id,
+        label: expense.description,
+        meta: `${expense.type} · Dia ${expense.dueDay}`,
+        amount,
+        colorClass: 'text-gray-900',
+      }));
+    const cardDetails = data.cards
+      .flatMap((card) => cardInvoiceDetail(data, card.id, selectedMonth)
+        .filter((item) => includeAllCards || item.category === category)
+        .map((item) => ({
+          id: `${card.id}-${item.purchaseId}`,
+          label: item.name,
+          meta: `Cartão ${card.name} · ${item.installmentNumber}/${item.totalInstallments}`,
+          amount: item.amount,
+          colorClass: 'text-purple-600',
+        })))
+      .filter((item) => Number.isFinite(item.amount) && item.amount > 0);
+    const debtDetails = category === 'Dívidas'
+      ? planning.debts.map(({ debt, amount }) => ({
+          id: debt.id,
+          label: debt.name,
+          meta: `${debt.institution || 'Dívida'} · ${debt.installmentsRemaining}x restantes`,
+          amount,
+          colorClass: 'text-rose-600',
+        }))
+      : [];
+    openDetail(`${category} · ${formatMonthBR(selectedMonth)}`, (
+      <DrillDownList
+        items={[...direct, ...cardDetails, ...debtDetails]}
+        totalLabel={`Total ${category}`}
+        total={current.categoryBreakdown[category] ?? 0}
+      />
+    ));
   };
 
   const alertIcons = {
@@ -165,11 +295,11 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
       {/* Bloco 1: resumo do mês */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-1">
-        <StatCard title="Receita prevista" value={formatCurrency(current.income)} color="green" icon={<TrendingUp size={18} />} tooltip="Soma das receitas fixas e variáveis deste mês." />
-        <StatCard title="Despesas previstas" value={formatCurrency(current.expectedExpenses)} color="red" icon={<TrendingDown size={18} />} tooltip="Valor previsto para gastos fixos, pontuais, cartões e dívidas deste mês." />
-        <StatCard title="Despesas realizadas" value={formatCurrency(current.realizedExpenses)} color="red" icon={<ReceiptText size={18} />} tooltip="Valor efetivo do mês, usando valor realizado quando informado." />
-        <StatCard title="Ainda a pagar" value={formatCurrency(current.unpaidExpenses)} color={current.unpaidExpenses > 0 ? 'yellow' : 'green'} icon={<Banknote size={18} />} tooltip="Saídas realizadas que ainda não foram marcadas como pagas." />
-        <StatCard title="Saldo previsto" value={formatCurrency(current.balance)} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} tooltip="Receitas previstas menos gastos, cartões e dívidas deste mês." />
+        <StatCard title="Receita prevista" value={formatCurrency(current.income)} color="green" icon={<TrendingUp size={18} />} onClick={showIncomeDetail} tooltip="Soma das receitas fixas e variáveis deste mês. Clique para ver os lançamentos." />
+        <StatCard title="Despesas previstas" value={formatCurrency(current.expectedExpenses)} color="red" icon={<TrendingDown size={18} />} onClick={() => showExpensesDetail('Despesas previstas', 'expected')} tooltip="Valor previsto para gastos fixos, pontuais, cartões e dívidas deste mês. Clique para ver a composição." />
+        <StatCard title="Despesas realizadas" value={formatCurrency(current.realizedExpenses)} color="red" icon={<ReceiptText size={18} />} onClick={() => showExpensesDetail('Despesas realizadas', 'realized')} tooltip="Valor efetivo do mês, usando valor realizado quando informado. Clique para ver os lançamentos." />
+        <StatCard title="Ainda a pagar" value={formatCurrency(current.unpaidExpenses)} color={current.unpaidExpenses > 0 ? 'yellow' : 'green'} icon={<Banknote size={18} />} onClick={() => showExpensesDetail('Ainda a pagar', 'unpaid')} tooltip="Saídas realizadas que ainda não foram marcadas como pagas. Clique para ver pendências." />
+        <StatCard title="Saldo previsto" value={formatCurrency(current.balance)} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} onClick={showBalanceDetail} tooltip="Receitas previstas menos gastos, cartões e dívidas deste mês. Clique para ver a fórmula." />
         <StatCard title="Saldo projetado contas" value={formatCurrency(current.projectedAccountsBalance)} color={current.projectedAccountsBalance >= 0 ? 'green' : 'red'} icon={<Building2 size={18} />} onClick={showBankDetail} tooltip="Saldo em contas projetado para o mês, conforme o motor financeiro." />
       </div>
 
@@ -214,7 +344,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
             {topBudgetUsages.map((usage) => (
               <div key={usage.budget.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-sm font-medium text-gray-700 truncate">{usage.category}</span>
+                  <button type="button" onClick={() => showCategoryDetail(usage.category)} className="text-sm font-medium text-gray-700 truncate hover:text-blue-600">{usage.category}</button>
                   <Badge color={budgetStatusColor[usage.status]}>{budgetStatusLabel[usage.status]}</Badge>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 mb-2">
@@ -385,7 +515,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
                 {categoryData.map((cat, i) => {
                   const pct = totalCat > 0 ? (cat.value / totalCat) * 100 : 0;
                   return (
-                    <div key={cat.name} className="flex items-center justify-between text-sm">
+                    <button key={cat.name} type="button" onClick={() => showCategoryDetail(cat.name)} className="flex w-full items-center justify-between text-left text-sm hover:bg-blue-50 rounded-md px-1 py-0.5">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
                         <span className="text-gray-600 truncate">{cat.name}</span>
@@ -394,7 +524,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
                         <span className="font-medium text-gray-900">{formatCurrency(cat.value)}</span>
                         <span className="text-xs text-gray-400 w-10 text-right">{pct.toFixed(0)}%</span>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -488,6 +618,78 @@ function MetricItem({ label, value, positive, negative }: { label: string; value
     <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
       <p className="text-xs text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
+    </div>
+  );
+}
+
+interface DrillDownItem {
+  id: string;
+  label: string;
+  meta: string;
+  amount: number;
+  colorClass: string;
+}
+
+function DrillDownList({ items, totalLabel, total }: { items: DrillDownItem[]; totalLabel: string; total: number }) {
+  return (
+    <div className="space-y-2">
+      {items.length === 0 ? (
+        <p className="text-sm text-gray-400">Nenhum lançamento encontrado.</p>
+      ) : (
+        items.map((item) => (
+          <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 p-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-gray-700">{item.label}</p>
+              <p className="text-xs text-gray-400">{item.meta}</p>
+            </div>
+            <span className={`flex-shrink-0 text-sm font-bold ${item.colorClass}`}>{formatCurrency(item.amount)}</span>
+          </div>
+        ))
+      )}
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-blue-50 p-3">
+        <span className="text-sm font-semibold text-blue-700">{totalLabel}</span>
+        <span className="text-sm font-bold text-blue-900">{formatCurrency(total)}</span>
+      </div>
+    </div>
+  );
+}
+
+function CategorySummary({ entries, onCategoryClick }: {
+  entries: { category: string; amount: number }[];
+  onCategoryClick: (category: string) => void;
+}) {
+  const totals = Object.entries(entries.reduce<Record<string, number>>((acc, item) => {
+    acc[item.category] = (acc[item.category] ?? 0) + item.amount;
+    return acc;
+  }, {})).sort((a, b) => b[1] - a[1]);
+
+  if (totals.length === 0) return null;
+
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-gray-500">Composição por categoria</p>
+      <div className="space-y-1.5">
+        {totals.map(([category, amount]) => (
+          <button
+            key={category}
+            type="button"
+            onClick={() => onCategoryClick(category)}
+            className="flex w-full items-center justify-between gap-3 rounded-lg bg-gray-50 p-2 text-left hover:bg-blue-50"
+          >
+            <span className="text-sm text-gray-700">{category}</span>
+            <span className="text-sm font-medium text-gray-900">{formatCurrency(amount)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, amount, colorClass, strong = false }: { label: string; amount: number; colorClass: string; strong?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between gap-3 rounded-lg p-3 ${strong ? 'bg-blue-50' : 'bg-gray-50'}`}>
+      <span className={`text-sm ${strong ? 'font-semibold text-blue-700' : 'text-gray-600'}`}>{label}</span>
+      <span className={`text-sm font-bold ${colorClass}`}>{formatCurrency(amount)}</span>
     </div>
   );
 }
