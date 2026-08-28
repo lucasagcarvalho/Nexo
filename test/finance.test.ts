@@ -14,6 +14,7 @@ import {
   getCardInvoiceForMonth,
   getInvoiceStatus,
   getMonthHealthStatus,
+  getProjectionHorizonSummaries,
   getActiveVigencia,
   incomeAmountForMonth,
   getMonthlyFinancialSummary,
@@ -501,6 +502,42 @@ test('status da projeção identifica meses saudáveis, atenção e críticos', 
 
   data.expenses = [expense({ vigencias: [{ id: 'vig-critical', amount: 6000, startDate: '2026-08', endDate: null }] })];
   assert.equal(getMonthHealthStatus(projectMonths(data, 1, '2026-08').months[0]), 'critico');
+});
+
+test('horizonte financeiro resume 3, 6 e 12 meses pelo motor de projeção', () => {
+  const data = baseData();
+  data.settings.surplusReserve = 50;
+  data.settings.surplusNextMonth = 0;
+  data.settings.surplusFree = 0;
+  data.bankAccounts = [{ id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: 1000 }];
+  data.incomes = [income({ vigencias: [{ id: 'vig-income', amount: 5000, startDate: '2026-08', endDate: null }] })];
+  data.expenses = [
+    expense({
+      id: 'monthly',
+      vigencias: [{ id: 'vig-monthly', amount: 3000, startDate: '2026-08', endDate: null }],
+    }),
+    expense({
+      id: 'heavy',
+      type: 'Pontual',
+      competenceMonth: '2026-10',
+      vigencias: [{ id: 'vig-heavy', amount: 7000, startDate: '2026-10', endDate: '2026-10' }],
+    }),
+  ];
+  data.cards = [card()];
+  data.purchases = [
+    purchase({ id: 'card-aug', totalAmount: 1200, installments: 1, firstInvoiceMonth: '2026-08' }),
+    purchase({ id: 'card-sep', totalAmount: 1800, installments: 1, firstInvoiceMonth: '2026-09' }),
+  ];
+
+  const summaries = getProjectionHorizonSummaries(data, projectMonths(data, 12, '2026-08'));
+  const threeMonths = summaries.find((summary) => summary.months === 3);
+
+  assert.deepEqual(summaries.map((summary) => summary.months), [3, 6, 12]);
+  assert.equal(threeMonths?.negativeMonths, 1);
+  assert.equal(threeMonths?.highestCardInvoice, 1800);
+  assert.equal(threeMonths?.highestIncomeCommitmentPercent, 200);
+  assert.equal(threeMonths?.lowestProjectedAccountsBalance, -3800);
+  assert.equal(threeMonths?.plannedSavings, 500);
 });
 
 test('limite disponível do cartão libera parcela paga somente no mês seguinte', () => {

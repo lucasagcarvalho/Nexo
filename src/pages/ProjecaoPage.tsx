@@ -3,7 +3,7 @@ import { BarChart3, AlertTriangle, TrendingUp, TrendingDown, Calendar, ChevronRi
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { projectMonths, monthsUntilFreeOfInstallments, getMonthHealthStatus, type MonthProjection, type MonthHealthStatus } from '@/lib/projection';
+import { projectMonths, monthsUntilFreeOfInstallments, getMonthHealthStatus, getProjectionHorizonSummaries, type MonthProjection, type MonthHealthStatus, type ProjectionHorizonSummary } from '@/lib/projection';
 import { formatCurrency, monthLabelShort, monthShort, formatMonthBR, formatPercent } from '@/lib/format';
 import { Card, Badge, Modal } from '@/components/ui';
 
@@ -13,6 +13,7 @@ export function ProjecaoPage() {
   const [detailMonth, setDetailMonth] = useState<MonthProjection | null>(null);
   const projection = useMemo(() => projectMonths(data, 360, selectedMonth), [data, selectedMonth]);
   const months = projection.months;
+  const horizonSummaries = useMemo(() => getProjectionHorizonSummaries(data, projection), [data, projection]);
 
   const flowData = months.map((m) => ({
     month: monthShort(m.monthKey),
@@ -92,6 +93,18 @@ export function ProjecaoPage() {
           </div>
         </Card>
       )}
+
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart3 size={18} className="text-blue-600" />
+          <h3 className="text-sm font-semibold text-gray-700">Horizonte financeiro resumido</h3>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {horizonSummaries.map((summary) => (
+            <ProjectionHorizonCard key={summary.months} summary={summary} />
+          ))}
+        </div>
+      </Card>
 
       {/* Charts */}
       <Card className="p-4">
@@ -201,6 +214,34 @@ function MonthStatusBadge({ status }: { status: MonthHealthStatus }) {
     critico: { label: 'Crítico', color: 'red' },
   };
   return <Badge color={config[status].color}>{config[status].label}</Badge>;
+}
+
+function ProjectionHorizonCard({ summary }: { summary: ProjectionHorizonSummary }) {
+  const hasRisk = summary.negativeMonths > 0 || summary.lowestProjectedAccountsBalance < 0;
+  return (
+    <div className={`p-3 rounded-lg border ${hasRisk ? 'bg-rose-50 border-rose-200' : 'bg-gray-50 border-gray-100'}`}>
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold text-gray-800">Próximos {summary.months} meses</h4>
+        <Badge color={hasRisk ? 'red' : 'green'}>{hasRisk ? 'Risco' : 'Saudável'}</Badge>
+      </div>
+      <div className="space-y-2">
+        <HorizonMetric label="Menor saldo projetado" value={formatCurrency(summary.lowestProjectedAccountsBalance)} negative={summary.lowestProjectedAccountsBalance < 0} />
+        <HorizonMetric label="Meses negativos" value={String(summary.negativeMonths)} negative={summary.negativeMonths > 0} />
+        <HorizonMetric label="Maior fatura" value={formatCurrency(summary.highestCardInvoice)} />
+        <HorizonMetric label="Maior comprometimento" value={formatPercent(summary.highestIncomeCommitmentPercent)} negative={summary.highestIncomeCommitmentPercent >= 90} />
+        <HorizonMetric label="Poupança prevista" value={formatCurrency(summary.plannedSavings)} positive={summary.plannedSavings > 0} />
+      </div>
+    </div>
+  );
+}
+
+function HorizonMetric({ label, value, positive, negative }: { label: string; value: string; positive?: boolean; negative?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-sm">
+      <span className="text-gray-500">{label}</span>
+      <span className={`font-semibold ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-800'}`}>{value}</span>
+    </div>
+  );
 }
 
 function ProjectionMonthDetail({ month }: { month: MonthProjection }) {

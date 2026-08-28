@@ -6,7 +6,7 @@ import { getCardMonthlyLimit, purchaseInstallmentForMonth } from './cardRules';
 import { getExceededCategoryBudgets } from './categoryBudgetRules';
 import { debtPaymentForMonth } from './debtRules';
 import { expenseAmountForMonth } from './expenseRules';
-import type { FinancialAlert, FinancialAlertSeverity, MonthHealthStatus, MonthProjection, ProjectionResult } from './types';
+import type { FinancialAlert, FinancialAlertSeverity, MonthHealthStatus, MonthProjection, ProjectionHorizonSummary, ProjectionResult } from './types';
 
 export function projectMonths(data: AppData, count = 360, startMonth?: string): ProjectionResult {
   const start = startMonth ?? currentMonthKey();
@@ -111,6 +111,39 @@ export function getMonthHealthStatus(month: MonthProjection): MonthHealthStatus 
   const commitment = month.income > 0 ? (month.totalExpenses / month.income) * 100 : 100;
   if (commitment >= 90 || month.balance < month.income * 0.05) return 'atencao';
   return 'saudavel';
+}
+
+export function getProjectionHorizonSummaries(
+  data: AppData,
+  projection: ProjectionResult,
+  horizons = [3, 6, 12],
+): ProjectionHorizonSummary[] {
+  return horizons.map((horizon) => {
+    const months = projection.months.slice(0, horizon);
+    const lowestProjectedAccountsBalance = months.reduce(
+      (lowest, month) => Math.min(lowest, month.projectedAccountsBalance),
+      months[0]?.projectedAccountsBalance ?? 0,
+    );
+    const negativeMonths = months.filter((month) => month.balance < 0 || month.projectedAccountsBalance < 0).length;
+    const highestCardInvoice = months.reduce((highest, month) => Math.max(highest, month.cardExpenses), 0);
+    const highestIncomeCommitmentPercent = months.reduce((highest, month) => {
+      const commitment = month.income > 0 ? (month.totalExpenses / month.income) * 100 : 0;
+      return Math.max(highest, commitment);
+    }, 0);
+    const plannedSavings = months.reduce((sum, month) => {
+      if (month.balance <= 0) return sum;
+      return sum + (month.balance * data.settings.surplusReserve / 100);
+    }, 0);
+
+    return {
+      months: horizon,
+      lowestProjectedAccountsBalance,
+      negativeMonths,
+      highestCardInvoice,
+      highestIncomeCommitmentPercent,
+      plannedSavings,
+    };
+  });
 }
 
 export function generateAlerts(data: AppData, projection: ProjectionResult): FinancialAlert[] {

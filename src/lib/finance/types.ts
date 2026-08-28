@@ -36,6 +36,15 @@ export interface ProjectionResult {
   startMonth: string;
 }
 
+export interface ProjectionHorizonSummary {
+  months: number;
+  lowestProjectedAccountsBalance: number;
+  negativeMonths: number;
+  highestCardInvoice: number;
+  highestIncomeCommitmentPercent: number;
+  plannedSavings: number;
+}
+
 export type MonthHealthStatus = 'saudavel' | 'atencao' | 'critico';
 
 export type FinancialAlertSeverity = 'info' | 'warning' | 'critical';
