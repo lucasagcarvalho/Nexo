@@ -7,6 +7,7 @@ import {
   cardInvoiceDetail,
   getCardCommitmentSummary,
   getDebtCommitmentSummary,
+  getFinancialHealthIndicators,
   getFutureInstallmentCalendar,
   cardUtilization,
   getCategoryBudgetUsages,
@@ -505,6 +506,36 @@ test('status da projeção identifica meses saudáveis, atenção e críticos', 
 
   data.expenses = [expense({ vigencias: [{ id: 'vig-critical', amount: 6000, startDate: '2026-08', endDate: null }] })];
   assert.equal(getMonthHealthStatus(projectMonths(data, 1, '2026-08').months[0]), 'critico');
+});
+
+test('indicadores financeiros explicáveis expõem fórmula, faixa e interpretação', () => {
+  const data = baseData();
+  data.settings.reserveTargetMonths = 3;
+  data.bankAccounts = [{ id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: 9000 }];
+  data.incomes = [income({ vigencias: [{ id: 'vig-income', amount: 10000, startDate: '2026-05', endDate: null }] })];
+  data.expenses = [
+    expense({ id: 'fixa', category: 'Casa', vigencias: [{ id: 'vig-fixa', amount: 3000, startDate: '2026-05', endDate: null }] }),
+    expense({ id: 'prazo', type: 'Prazo', category: 'Educação', vigencias: [{ id: 'vig-prazo', amount: 1000, startDate: '2026-08', endDate: '2026-10' }] }),
+    expense({ id: 'hist-1', type: 'Pontual', category: 'Lazer', competenceMonth: '2026-07', vigencias: [{ id: 'vig-hist-1', amount: 2000, startDate: '2026-07', endDate: '2026-07' }] }),
+    expense({ id: 'hist-2', type: 'Pontual', category: 'Lazer', competenceMonth: '2026-06', vigencias: [{ id: 'vig-hist-2', amount: 2000, startDate: '2026-06', endDate: '2026-06' }] }),
+    expense({ id: 'hist-3', type: 'Pontual', category: 'Lazer', competenceMonth: '2026-05', vigencias: [{ id: 'vig-hist-3', amount: 2000, startDate: '2026-05', endDate: '2026-05' }] }),
+  ];
+  data.cards = [card()];
+  data.purchases = [purchase({ totalAmount: 1500, installments: 1, firstInvoiceMonth: '2026-08' })];
+  data.debts = [debt({ balance: 3000, installmentAmount: 1000, installmentsRemaining: 3, dueDate: '2026-08-15' })];
+
+  const indicators = getFinancialHealthIndicators(data, projectMonths(data, 1, '2026-08'));
+  const byId = Object.fromEntries(indicators.map((indicator) => [indicator.id, indicator]));
+
+  assert.equal(indicators.every((indicator) => indicator.formula.length > 0 && indicator.range.length > 0 && indicator.explanation.length > 0), true);
+  assert.equal(byId['savings-rate'].value, 35);
+  assert.equal(byId['savings-rate'].status, 'bom');
+  assert.equal(byId['fixed-commitment'].value, 50);
+  assert.equal(byId['card-commitment'].value, 15);
+  assert.equal(Math.round((byId['reserve-coverage'].value ?? 0) * 10) / 10, 2.7);
+  assert.equal(byId['reserve-coverage'].status, 'atencao');
+  assert.equal(byId['expense-variation'].value, 30);
+  assert.equal(byId['expense-variation'].status, 'critico');
 });
 
 test('horizonte financeiro resume 3, 6 e 12 meses pelo motor de projeção', () => {

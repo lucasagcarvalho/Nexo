@@ -6,7 +6,7 @@ import { getCardMonthlyLimit, purchaseInstallmentForMonth } from './cardRules';
 import { getExceededCategoryBudgets } from './categoryBudgetRules';
 import { debtPaymentForMonth } from './debtRules';
 import { expenseAmountForMonth } from './expenseRules';
-import type { FinancialAlert, FinancialAlertSeverity, MonthHealthStatus, MonthProjection, ProjectionHorizonSummary, ProjectionResult } from './types';
+import type { FinancialAlert, FinancialAlertSeverity, FinancialHealthIndicator, FinancialHealthIndicatorStatus, MonthHealthStatus, MonthProjection, ProjectionHorizonSummary, ProjectionResult } from './types';
 
 export function projectMonths(data: AppData, count = 360, startMonth?: string): ProjectionResult {
   const start = startMonth ?? currentMonthKey();
@@ -111,6 +111,91 @@ export function getMonthHealthStatus(month: MonthProjection): MonthHealthStatus 
   const commitment = month.income > 0 ? (month.totalExpenses / month.income) * 100 : 100;
   if (commitment >= 90 || month.balance < month.income * 0.05) return 'atencao';
   return 'saudavel';
+}
+
+export function getFinancialHealthIndicators(data: AppData, projection: ProjectionResult): FinancialHealthIndicator[] {
+  const current = projection.months[0];
+  if (!current) return [];
+
+  const savingsRate = current.income > 0 ? (current.balance / current.income) * 100 : null;
+  const fixedCommitmentValue = current.fixedExpenses + current.prazoExpenses + current.debtExpenses;
+  const fixedCommitment = current.income > 0 ? (fixedCommitmentValue / current.income) * 100 : null;
+  const cardCommitment = current.income > 0 ? (current.cardExpenses / current.income) * 100 : null;
+  const averageEssentialExpenses = averageEssentialExpensesForReserve(data, current.monthKey, current.essentialExpenses, 3);
+  const reserveCoverage = averageEssentialExpenses > 0 ? totalBankBalance(data) / averageEssentialExpenses : null;
+  const previousAverage = averagePreviousExpenses(data, current.monthKey, 3);
+  const expenseVariation = previousAverage > 0 ? ((current.realizedExpenses - previousAverage) / previousAverage) * 100 : null;
+
+  return [
+    {
+      id: 'savings-rate',
+      label: 'Taxa de poupança',
+      value: savingsRate,
+      unit: 'percent',
+      status: savingsRate === null ? 'neutro' : statusByMinimum(savingsRate, 15, 5),
+      formula: '(receita - despesas) / receita',
+      explanation: current.income > 0
+        ? `Você está reservando ${formatCurrencyAbs(current.balance)} de uma renda de ${formatCurrencyAbs(current.income)} neste mês.`
+        : 'Não há renda prevista neste mês para calcular a taxa de poupança.',
+      range: 'Bom: 15% ou mais. Atenção: 5% a 14,9%. Crítico: abaixo de 5% ou negativo.',
+    },
+    {
+      id: 'fixed-commitment',
+      label: 'Comprometimento fixo',
+      value: fixedCommitment,
+      unit: 'percent',
+      status: fixedCommitment === null ? 'neutro' : statusByMaximum(fixedCommitment, 50, 70),
+      formula: '(gastos fixos + gastos com prazo + dívidas) / renda',
+      explanation: `Compromissos fixos e dívidas somam ${formatCurrencyAbs(fixedCommitmentValue)} neste mês.`,
+      range: 'Bom: até 50%. Atenção: acima de 50%. Crítico: 70% ou mais.',
+    },
+    {
+      id: 'card-commitment',
+      label: 'Comprometimento de cartões',
+      value: cardCommitment,
+      unit: 'percent',
+      status: cardCommitment === null ? 'neutro' : statusByMaximum(cardCommitment, 25, 35),
+      formula: 'faturas / renda',
+      explanation: `As faturas do mês somam ${formatCurrencyAbs(current.cardExpenses)}.`,
+      range: 'Bom: até 25%. Atenção: acima de 25%. Crítico: 35% ou mais.',
+    },
+    {
+      id: 'reserve-coverage',
+      label: 'Cobertura da reserva',
+      value: reserveCoverage,
+      unit: 'months',
+      status: reserveCoverage === null ? 'neutro' : statusByMinimum(reserveCoverage, data.settings.reserveTargetMonths, 1),
+      formula: 'saldo em contas / média mensal de gastos essenciais',
+      explanation: averageEssentialExpenses > 0
+        ? `Seu saldo em contas cobre ${formatCurrencyAbs(averageEssentialExpenses)} de gastos essenciais médios por mês.`
+        : 'Não há gastos essenciais suficientes para calcular a cobertura da reserva.',
+      range: `Bom: ${data.settings.reserveTargetMonths.toFixed(1).replace('.', ',')} meses ou mais. Atenção: 1 mês até a meta. Crítico: abaixo de 1 mês.`,
+    },
+    {
+      id: 'expense-variation',
+      label: 'Variação de gastos',
+      value: expenseVariation,
+      unit: 'percent',
+      status: expenseVariation === null ? 'neutro' : statusByMaximum(expenseVariation, 0, 15),
+      formula: '(gasto atual - média dos últimos 3 meses) / média dos últimos 3 meses',
+      explanation: previousAverage > 0
+        ? `As saídas realizadas são comparadas com a média anterior de ${formatCurrencyAbs(previousAverage)}.`
+        : 'Não há média histórica de gastos realizados para comparar.',
+      range: 'Bom: igual ou abaixo da média. Atenção: acima da média. Crítico: 15% ou mais acima.',
+    },
+  ];
+}
+
+function statusByMinimum(value: number, goodAt: number, warningAt: number): FinancialHealthIndicatorStatus {
+  if (value >= goodAt) return 'bom';
+  if (value >= warningAt) return 'atencao';
+  return 'critico';
+}
+
+function statusByMaximum(value: number, warningAbove: number, criticalAt: number): FinancialHealthIndicatorStatus {
+  if (value >= criticalAt) return 'critico';
+  if (value > warningAbove) return 'atencao';
+  return 'bom';
 }
 
 export function getProjectionHorizonSummaries(
@@ -334,6 +419,18 @@ function averagePreviousExpenses(data: AppData, monthKey: string, count: number)
     const summary = getMonthlyFinancialSummary(data, addMonths(monthKey, -i));
     if (summary.realizedExpenses <= 0) continue;
     total += summary.realizedExpenses;
+    months++;
+  }
+  return months > 0 ? total / months : 0;
+}
+
+function averageEssentialExpensesForReserve(data: AppData, monthKey: string, currentEssentialExpenses: number, count: number): number {
+  let total = currentEssentialExpenses;
+  let months = currentEssentialExpenses > 0 ? 1 : 0;
+  for (let i = 1; i < count; i++) {
+    const summary = getMonthlyFinancialSummary(data, addMonths(monthKey, -i));
+    if (summary.essentialExpenses <= 0) continue;
+    total += summary.essentialExpenses;
     months++;
   }
   return months > 0 ? total / months : 0;

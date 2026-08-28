@@ -49,6 +49,19 @@ export interface ProjectionHorizonSummary {
 
 export type MonthHealthStatus = 'saudavel' | 'atencao' | 'critico';
 
+export type FinancialHealthIndicatorStatus = 'bom' | 'atencao' | 'critico' | 'neutro';
+
+export interface FinancialHealthIndicator {
+  id: string;
+  label: string;
+  value: number | null;
+  unit: 'percent' | 'months';
+  status: FinancialHealthIndicatorStatus;
+  formula: string;
+  explanation: string;
+  range: string;
+}
+
 export type FinancialAlertSeverity = 'info' | 'warning' | 'critical';
 
 export interface FinancialAlert {

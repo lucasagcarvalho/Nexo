@@ -3,10 +3,11 @@ import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon,
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Area, AreaChart } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { getCategoryBudgetUsages, projectMonths, generateAlerts, recoveryProgress, totalDebt, monthsUntilFreeOfInstallments, cardUtilization, totalBankBalance, getCardMonthlyLimit } from '@/lib/projection';
+import { getCategoryBudgetUsages, projectMonths, generateAlerts, recoveryProgress, totalDebt, monthsUntilFreeOfInstallments, cardUtilization, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators } from '@/lib/projection';
 import { formatCurrency, formatPercent, monthLabelShort, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
+import type { FinancialHealthIndicator } from '@/lib/projection';
 
 const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#6B7280'];
 
@@ -18,6 +19,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const projection = useMemo(() => projectMonths(data, 24, selectedMonth), [data, selectedMonth]);
   const alerts = useMemo(() => generateAlerts(data, projection), [data, projection]);
   const recovery = useMemo(() => recoveryProgress(data, projection), [data, projection]);
+  const healthIndicators = useMemo(() => getFinancialHealthIndicators(data, projection), [data, projection]);
   const current = projection.months[0];
   const debt = totalDebt(data);
   const monthsFree = monthsUntilFreeOfInstallments(data, selectedMonth);
@@ -264,12 +266,19 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <LineChartIcon size={16} className="text-blue-600" />
-              <h3 className="text-sm font-semibold text-gray-700">Saúde Financeira</h3>
+              <h3 className="text-sm font-semibold text-gray-700">Saúde financeira explicável</h3>
             </div>
-            <span className="text-2xl font-bold text-blue-600">{recovery.percent}%</span>
+            <Badge color="blue">{formatMonthBR(selectedMonth)}</Badge>
           </div>
-          <ProgressBar value={recovery.percent} max={100} color="blue" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1 mt-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {healthIndicators.map((indicator) => (
+              <HealthIndicatorCard key={indicator.id} indicator={indicator} />
+            ))}
+          </div>
+          <div className="mt-3 border-t border-gray-100 pt-3">
+            <p className="text-xs font-medium text-gray-500 mb-2">Checklist de recuperação</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1">
             {recovery.steps.map((step, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
                 <div className={`w-4 h-4 rounded-full flex items-center justify-center ${step.done ? 'bg-emerald-500' : 'bg-gray-200'}`}>
@@ -521,6 +530,43 @@ function MetricItem({ label, value, positive, negative }: { label: string; value
     <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
       <p className="text-xs text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
+    </div>
+  );
+}
+
+function HealthIndicatorCard({ indicator }: { indicator: FinancialHealthIndicator }) {
+  const statusLabel = {
+    bom: 'Bom',
+    atencao: 'Atenção',
+    critico: 'Crítico',
+    neutro: 'Sem dados',
+  };
+  const statusColor = {
+    bom: 'green',
+    atencao: 'yellow',
+    critico: 'red',
+    neutro: 'gray',
+  } as const;
+  const valueText = indicator.value === null
+    ? 'Sem dados'
+    : indicator.unit === 'months'
+      ? `${indicator.value.toFixed(1).replace('.', ',')} meses`
+      : formatPercent(indicator.value);
+
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-gray-500">{indicator.label}</p>
+          <p className="text-lg font-bold text-gray-900 mt-1">{valueText}</p>
+        </div>
+        <Badge color={statusColor[indicator.status]}>{statusLabel[indicator.status]}</Badge>
+      </div>
+      <p className="text-xs text-gray-600 mt-2">{indicator.explanation}</p>
+      <div className="mt-2 space-y-1 border-t border-gray-200 pt-2">
+        <p className="text-[11px] text-gray-400">Fórmula: {indicator.formula}</p>
+        <p className="text-[11px] text-gray-400">{indicator.range}</p>
+      </div>
     </div>
   );
 }
