@@ -7,10 +7,39 @@ const DEFAULT_CATEGORIES = [
   'Impostos', 'Empréstimos', 'Financiamentos', 'Serviços', 'Outros',
 ];
 
+const DEFAULT_CATEGORY_CLASSES: Record<string, AppData['categoryEntries'][number]['expenseClass']> = {
+  Moradia: 'essential',
+  Aluguel: 'essential',
+  Casa: 'essential',
+  Alimentação: 'essential',
+  Mercado: 'essential',
+  Transporte: 'essential',
+  Carro: 'essential',
+  Combustível: 'essential',
+  Saúde: 'essential',
+  Educação: 'essential',
+  Crianças: 'essential',
+  Impostos: 'essential',
+  Empréstimos: 'financial',
+  Financiamentos: 'financial',
+  Assinaturas: 'lifestyle',
+  Delivery: 'lifestyle',
+  Eletrônicos: 'lifestyle',
+  Informática: 'lifestyle',
+  Pets: 'lifestyle',
+  Lazer: 'lifestyle',
+  Serviços: 'other',
+  Outros: 'other',
+};
+
+export function defaultCategoryClass(name: string): AppData['categoryEntries'][number]['expenseClass'] {
+  return DEFAULT_CATEGORY_CLASSES[name] ?? 'other';
+}
+
 export function seedData(): AppData {
   return {
     categories: DEFAULT_CATEGORIES,
-    categoryEntries: DEFAULT_CATEGORIES.map((name, i) => ({ id: `cat-${i}`, name, active: true })),
+    categoryEntries: DEFAULT_CATEGORIES.map((name, i) => ({ id: `cat-${i}`, name, active: true, expenseClass: defaultCategoryClass(name) })),
     incomes: [],
     expenses: [],
     cards: [],

@@ -6,7 +6,7 @@ import { useMonth } from '@/store/MonthContext';
 import { getCategoryBudgetUsages, projectMonths, simulatePurchase, type MonthProjection } from '@/lib/projection';
 import { formatCurrency, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, Badge, Button, Input, Select, ConfirmDialog, ProgressBar, IconButton, Modal, EmptyState, MonthPicker, CurrencyInput } from '@/components/ui';
-import type { Scenario, ScenarioType, CategoryEntry, CategoryBudget } from '@/lib/types';
+import type { Scenario, ScenarioType, CategoryEntry, CategoryBudget, ExpenseClass } from '@/lib/types';
 import { PessoasTab } from '@/pages/PessoasTab';
 
 type Tab = 'configuracoes' | 'reserva' | 'cenarios' | 'simulador' | 'historico' | 'pendentes' | 'pessoas' | 'categorias';
@@ -144,7 +144,7 @@ function ConfigTab({ settings, updateSettings, onReset }: { settings: ReturnType
 
 function ReservaTab({ data, current }: { data: ReturnType<typeof useData>['data']; current: ReturnType<typeof projectMonths>['months'][0] }) {
   const reserve = Math.max(0, current.accumulatedBalance);
-  const monthlyExpenses = current.totalExpenses;
+  const monthlyExpenses = current.essentialExpenses;
   const targetMonths = data.settings.reserveTargetMonths;
   const target = monthlyExpenses * targetMonths;
   const monthsCovered = monthlyExpenses > 0 ? reserve / monthlyExpenses : 0;
@@ -155,7 +155,7 @@ function ReservaTab({ data, current }: { data: ReturnType<typeof useData>['data'
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-3"><p className="text-xs text-gray-400">Reserva atual</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(reserve)}</p></Card>
         <Card className="p-3"><p className="text-xs text-gray-400">Reserva desejada</p><p className="text-lg font-bold text-blue-600">{formatCurrency(target)}</p></Card>
-        <Card className="p-3"><p className="text-xs text-gray-400">Meses cobertos</p><p className="text-lg font-bold text-gray-900">{monthsCovered.toFixed(1)}</p></Card>
+        <Card className="p-3"><p className="text-xs text-gray-400">Meses essenciais</p><p className="text-lg font-bold text-gray-900">{monthsCovered.toFixed(1)}</p></Card>
         <Card className="p-3"><p className="text-xs text-gray-400">Valor protegido</p><p className="text-lg font-bold text-gray-900">{formatCurrency(data.settings.reserveFloor)}</p></Card>
       </div>
 
@@ -166,7 +166,7 @@ function ReservaTab({ data, current }: { data: ReturnType<typeof useData>['data'
         </div>
         <ProgressBar value={reserve} max={target} color={pct >= 100 ? 'green' : 'blue'} />
         <p className="text-xs text-gray-400 mt-2">
-          {pct >= 100 ? 'Meta de reserva atingida!' : `Faltam ${formatCurrency(Math.max(0, target - reserve))} para atingir a meta de ${targetMonths} meses.`}
+          {pct >= 100 ? 'Meta de reserva atingida!' : `Faltam ${formatCurrency(Math.max(0, target - reserve))} para cobrir ${targetMonths} meses de gastos essenciais.`}
         </p>
       </Card>
 
@@ -510,7 +510,7 @@ function PendentesTab({ data, markPendingAdded, addPendingExpense, deletePending
 function CategoriasTab({ data, selectedMonth, addCategory, updateCategory, deleteCategory, toggleCategory, addCategoryBudget, updateCategoryBudget, deleteCategoryBudget }: {
   data: ReturnType<typeof useData>['data'];
   selectedMonth: string;
-  addCategory: (name: string) => void;
+  addCategory: (name: string, expenseClass?: ExpenseClass) => void;
   updateCategory: (id: string, updates: Partial<CategoryEntry>) => void;
   deleteCategory: (id: string) => void;
   toggleCategory: (id: string) => void;
@@ -522,6 +522,7 @@ function CategoriasTab({ data, selectedMonth, addCategory, updateCategory, delet
   const [editing, setEditing] = useState<CategoryEntry | null>(null);
   const [confirm, setConfirm] = useState<CategoryEntry | null>(null);
   const [name, setName] = useState('');
+  const [expenseClass, setExpenseClass] = useState<ExpenseClass>('other');
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<CategoryBudget | null>(null);
   const [confirmBudget, setConfirmBudget] = useState<CategoryBudget | null>(null);
@@ -535,8 +536,18 @@ function CategoriasTab({ data, selectedMonth, addCategory, updateCategory, delet
     .map((cat) => ({ value: cat.name, label: cat.name }));
   const budgetUsages = useMemo(() => getCategoryBudgetUsages(data, selectedMonth), [data, selectedMonth]);
 
-  const openAdd = () => { setEditing(null); setName(''); setOpen(true); };
-  const openEdit = (cat: CategoryEntry) => { setEditing(cat); setName(cat.name); setOpen(true); };
+  const classOptions: { value: ExpenseClass; label: string }[] = [
+    { value: 'essential', label: 'Essencial' },
+    { value: 'lifestyle', label: 'Discricionário' },
+    { value: 'financial', label: 'Financeiro' },
+    { value: 'other', label: 'Outros' },
+  ];
+  const classLabel = (value: ExpenseClass) => classOptions.find((option) => option.value === value)?.label ?? 'Outros';
+  const classBadgeColor = (value: ExpenseClass) => (
+    value === 'essential' ? 'green' : value === 'financial' ? 'purple' : value === 'lifestyle' ? 'yellow' : 'gray'
+  );
+  const openAdd = () => { setEditing(null); setName(''); setExpenseClass('other'); setOpen(true); };
+  const openEdit = (cat: CategoryEntry) => { setEditing(cat); setName(cat.name); setExpenseClass(cat.expenseClass); setOpen(true); };
   const openAddBudget = () => {
     setEditingBudget(null);
     setBudgetCategory(activeCategoryOptions[0]?.value ?? data.categories[0] ?? '');
@@ -555,8 +566,8 @@ function CategoriasTab({ data, selectedMonth, addCategory, updateCategory, delet
   };
   const save = () => {
     if (!name.trim()) return;
-    if (editing) updateCategory(editing.id, { name: name.trim() });
-    else addCategory(name.trim());
+    if (editing) updateCategory(editing.id, { name: name.trim(), expenseClass });
+    else addCategory(name.trim(), expenseClass);
     setOpen(false);
   };
   const saveBudget = () => {
@@ -589,7 +600,7 @@ function CategoriasTab({ data, selectedMonth, addCategory, updateCategory, delet
           <div className="divide-y divide-gray-100">
             {categories.map((cat) => (
               <div key={cat.id} className="p-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2"><Tag size={14} className="text-gray-400" /><span className="font-medium text-gray-800">{cat.name}</span></div>
+                <div className="flex items-center gap-2 flex-wrap"><Tag size={14} className="text-gray-400" /><span className="font-medium text-gray-800">{cat.name}</span><Badge color={classBadgeColor(cat.expenseClass)}>{classLabel(cat.expenseClass)}</Badge></div>
                 <div className="flex items-center gap-2"><Badge color={cat.active ? 'green' : 'gray'}>{cat.active ? 'Ativa' : 'Inativa'}</Badge><IconButton icon={<Edit2 size={15} />} label="Editar categoria" onClick={() => openEdit(cat)} /><IconButton icon={<Power size={15} />} label={cat.active ? 'Desativar categoria' : 'Ativar categoria'} onClick={() => toggleCategory(cat.id)} /><IconButton icon={<Trash2 size={15} />} label="Excluir categoria" variant="danger" onClick={() => setConfirm(cat)} /></div>
               </div>
             ))}
@@ -599,7 +610,11 @@ function CategoriasTab({ data, selectedMonth, addCategory, updateCategory, delet
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Editar categoria' : 'Nova categoria'} footer={
         <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button><Button onClick={save} disabled={!name.trim()}>Salvar</Button></div>
       }>
-        <form onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3"><Input label="Nome" value={name} onChange={setName} required /><button type="submit" className="hidden" aria-hidden="true" /></form>
+        <form onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3">
+          <Input label="Nome" value={name} onChange={setName} required />
+          <Select label="Classificação" value={expenseClass} onChange={(value) => setExpenseClass(value as ExpenseClass)} options={classOptions} required />
+          <button type="submit" className="hidden" aria-hidden="true" />
+        </form>
       </Modal>
       <ConfirmDialog open={!!confirm} title="Excluir categoria" message="Se houver gastos vinculados, é preferível desativar a categoria para preservar o histórico. Deseja excluir mesmo assim?" onConfirm={() => { if (confirm) deleteCategory(confirm.id); setConfirm(null); }} onCancel={() => setConfirm(null)} confirmText="Excluir" />
 

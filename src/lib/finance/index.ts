@@ -6,5 +6,6 @@ export * from './cardRules';
 export * from './debtRules';
 export * from './accountRules';
 export * from './categoryBudgetRules';
+export * from './categoryClassRules';
 export * from './monthlySummary';
 export * from './projection';

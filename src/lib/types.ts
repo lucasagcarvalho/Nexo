@@ -174,7 +174,10 @@ export interface CategoryEntry {
   id: string;
   name: string;
   active: boolean;
+  expenseClass: ExpenseClass;
 }
+
+export type ExpenseClass = 'essential' | 'lifestyle' | 'financial' | 'other';
 
 export interface CategoryBudget {
   id: string;

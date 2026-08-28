@@ -15,6 +15,10 @@ export interface MonthProjection {
   unpaidExpenses: number;
   expenseVariance: number;
   expenseVariancePercent: number;
+  essentialExpenses: number;
+  discretionaryExpenses: number;
+  financialCommitments: number;
+  otherExpenses: number;
   balance: number;
   accumulatedBalance: number;
   cardByCard: Record<string, number>;
@@ -31,6 +35,8 @@ export interface ProjectionResult {
   months: MonthProjection[];
   startMonth: string;
 }
+
+export type MonthHealthStatus = 'saudavel' | 'atencao' | 'critico';
 
 export type FinancialAlertSeverity = 'info' | 'warning' | 'critical';
 

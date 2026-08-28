@@ -3,6 +3,8 @@ import { incomeAmountForMonth, getIncomesForMonth } from './incomeRules';
 import { expenseAmountForMonth, expectedExpenseAmountForMonth, getExpensesForMonth, isExpensePaidForMonth } from './expenseRules';
 import { isInvoicePaid, purchaseInstallmentForMonth, getInstallmentAmounts, monthIndex } from './cardRules';
 import { debtPaymentForMonth, getDebtPaymentsForMonth } from './debtRules';
+import { getCategoryExpenseClass } from './categoryClassRules';
+import type { ExpenseClass } from '../types';
 
 export function getMonthlyFinancialSummary(data: AppData, monthKey: string) {
   let fixedIncome = 0;
@@ -21,8 +23,18 @@ export function getMonthlyFinancialSummary(data: AppData, monthKey: string) {
   let variableExpenses = 0;
   let expectedDirectExpenses = 0;
   let paidDirectExpenses = 0;
+  const classBreakdown: Record<ExpenseClass, number> = {
+    essential: 0,
+    lifestyle: 0,
+    financial: 0,
+    other: 0,
+  };
   const categoryBreakdown: Record<string, number> = {};
   const typeBreakdown: Record<string, number> = {};
+
+  const addToClass = (expenseClass: ExpenseClass, amount: number) => {
+    classBreakdown[expenseClass] += amount;
+  };
 
   for (const expense of data.expenses) {
     if (expense.cardId) continue;
@@ -35,6 +47,7 @@ export function getMonthlyFinancialSummary(data: AppData, monthKey: string) {
     else variableExpenses += amount;
     typeBreakdown[expense.type] = (typeBreakdown[expense.type] ?? 0) + amount;
     categoryBreakdown[expense.category] = (categoryBreakdown[expense.category] ?? 0) + amount;
+    addToClass(getCategoryExpenseClass(data, expense.category), amount);
   }
 
   const cardByCard: Record<string, number> = {};
@@ -47,6 +60,7 @@ export function getMonthlyFinancialSummary(data: AppData, monthKey: string) {
       cardExpenses += installment;
       if (isInvoicePaid(data, purchase.cardId, monthKey)) paidCardExpenses += installment;
       categoryBreakdown['Cartões'] = (categoryBreakdown['Cartões'] ?? 0) + installment;
+      addToClass(getCategoryExpenseClass(data, purchase.category), installment);
     }
   }
 
@@ -56,6 +70,7 @@ export function getMonthlyFinancialSummary(data: AppData, monthKey: string) {
     if (amount <= 0) continue;
     debtExpenses += amount;
     categoryBreakdown['Dívidas'] = (categoryBreakdown['Dívidas'] ?? 0) + amount;
+    addToClass('financial', amount);
   }
 
   const totalExpenses = fixedExpenses + prazoExpenses + variableExpenses + cardExpenses + debtExpenses;
@@ -65,6 +80,10 @@ export function getMonthlyFinancialSummary(data: AppData, monthKey: string) {
   const unpaidExpenses = Math.max(0, realizedExpenses - paidExpenses);
   const expenseVariance = realizedExpenses - expectedExpenses;
   const expenseVariancePercent = expectedExpenses > 0 ? (expenseVariance / expectedExpenses) * 100 : 0;
+  const essentialExpenses = classBreakdown.essential;
+  const discretionaryExpenses = classBreakdown.lifestyle;
+  const financialCommitments = classBreakdown.financial;
+  const otherExpenses = classBreakdown.other;
   const balance = income - totalExpenses;
 
   let parcelasFuturas = 0;
@@ -97,6 +116,10 @@ export function getMonthlyFinancialSummary(data: AppData, monthKey: string) {
     unpaidExpenses,
     expenseVariance,
     expenseVariancePercent,
+    essentialExpenses,
+    discretionaryExpenses,
+    financialCommitments,
+    otherExpenses,
     balance,
     cardByCard,
     cardInstallments: cardExpenses,

@@ -1,15 +1,16 @@
-import { useMemo } from 'react';
-import { BarChart3, AlertTriangle, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { BarChart3, AlertTriangle, TrendingUp, TrendingDown, Calendar, ChevronRight } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { projectMonths, monthsUntilFreeOfInstallments } from '@/lib/projection';
-import { formatCurrency, monthLabelShort, monthShort, formatMonthBR } from '@/lib/format';
-import { Card, Badge } from '@/components/ui';
+import { projectMonths, monthsUntilFreeOfInstallments, getMonthHealthStatus, type MonthProjection, type MonthHealthStatus } from '@/lib/projection';
+import { formatCurrency, monthLabelShort, monthShort, formatMonthBR, formatPercent } from '@/lib/format';
+import { Card, Badge, Modal } from '@/components/ui';
 
 export function ProjecaoPage() {
   const { data } = useData();
   const { selectedMonth } = useMonth();
+  const [detailMonth, setDetailMonth] = useState<MonthProjection | null>(null);
   const projection = useMemo(() => projectMonths(data, 360, selectedMonth), [data, selectedMonth]);
   const months = projection.months;
 
@@ -146,35 +147,91 @@ export function ProjecaoPage() {
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left px-4 py-2 font-medium text-gray-500">Mês</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Receitas</th>
-                <th className="text-right px-4 py-2 font-medium text-gray-500">Fixas</th>
-                <th className="text-right px-4 py-2 font-medium text-gray-500">Variáveis</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-500">Gastos fixos</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-500">Gastos prazo</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-500">Gastos pontuais</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Cartões</th>
                 <th className="text-right px-4 py-2 font-medium text-gray-500">Dívidas</th>
-                <th className="text-right px-4 py-2 font-medium text-gray-500">Total</th>
-                <th className="text-right px-4 py-2 font-medium text-gray-500">Saldo</th>
-                <th className="text-right px-4 py-2 font-medium text-gray-500">Saldo contas</th>
-                <th className="text-right px-4 py-2 font-medium text-gray-500">Acumulado</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-500">Total de saídas</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-500">Saldo do mês</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-500">Saldo projetado em contas</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-500">% renda comprometida</th>
+                <th className="text-center px-4 py-2 font-medium text-gray-500">Status</th>
+                <th className="w-10 px-2 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {months.map((m) => (
-                <tr key={m.monthKey} className={`border-b border-gray-100 ${m.balance < 0 ? 'bg-rose-50' : ''}`}>
-                  <td className="px-4 py-2 font-medium text-gray-700">{monthShort(m.monthKey)}</td>
+              {months.map((m) => {
+                const status = getMonthHealthStatus(m);
+                const commitmentPercent = m.income > 0 ? (m.totalExpenses / m.income) * 100 : 0;
+                return (
+                <tr key={m.monthKey} className={`border-b border-gray-100 cursor-pointer hover:bg-blue-50 ${status === 'critico' ? 'bg-rose-50' : status === 'atencao' ? 'bg-amber-50/50' : ''}`} onClick={() => setDetailMonth(m)}>
+                  <td className="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">{monthShort(m.monthKey)}</td>
                   <td className="px-4 py-2 text-right text-emerald-600">{formatCurrency(m.income)}</td>
                   <td className="px-4 py-2 text-right text-gray-600">{formatCurrency(m.fixedExpenses)}</td>
+                  <td className="px-4 py-2 text-right text-gray-600">{formatCurrency(m.prazoExpenses)}</td>
                   <td className="px-4 py-2 text-right text-gray-600">{formatCurrency(m.variableExpenses)}</td>
                   <td className="px-4 py-2 text-right text-purple-600">{formatCurrency(m.cardExpenses)}</td>
                   <td className="px-4 py-2 text-right text-rose-600">{formatCurrency(m.debtExpenses)}</td>
                   <td className="px-4 py-2 text-right text-gray-900 font-medium">{formatCurrency(m.totalExpenses)}</td>
                   <td className={`px-4 py-2 text-right font-bold ${m.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(m.balance)}</td>
                   <td className={`px-4 py-2 text-right font-medium ${m.projectedAccountsBalance >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>{formatCurrency(m.projectedAccountsBalance)}</td>
-                  <td className={`px-4 py-2 text-right ${m.accumulatedBalance >= 0 ? 'text-gray-700' : 'text-rose-600'}`}>{formatCurrency(m.accumulatedBalance)}</td>
+                  <td className="px-4 py-2 text-right text-gray-700">{formatPercent(commitmentPercent)}</td>
+                  <td className="px-4 py-2 text-center"><MonthStatusBadge status={status} /></td>
+                  <td className="px-2 py-2 text-gray-300"><ChevronRight size={16} /></td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
       </Card>
+
+      <Modal open={!!detailMonth} onClose={() => setDetailMonth(null)} title={detailMonth ? `Detalhes · ${formatMonthBR(detailMonth.monthKey)}` : ''} size="lg">
+        {detailMonth && <ProjectionMonthDetail month={detailMonth} />}
+      </Modal>
+    </div>
+  );
+}
+
+function MonthStatusBadge({ status }: { status: MonthHealthStatus }) {
+  const config: Record<MonthHealthStatus, { label: string; color: 'green' | 'yellow' | 'red' }> = {
+    saudavel: { label: 'Saudável', color: 'green' },
+    atencao: { label: 'Atenção', color: 'yellow' },
+    critico: { label: 'Crítico', color: 'red' },
+  };
+  return <Badge color={config[status].color}>{config[status].label}</Badge>;
+}
+
+function ProjectionMonthDetail({ month }: { month: MonthProjection }) {
+  const commitmentPercent = month.income > 0 ? (month.totalExpenses / month.income) * 100 : 0;
+  const rows = [
+    ['Receitas', month.income, 'text-emerald-600'],
+    ['Gastos fixos', month.fixedExpenses, 'text-gray-700'],
+    ['Gastos prazo', month.prazoExpenses, 'text-gray-700'],
+    ['Gastos pontuais', month.variableExpenses, 'text-gray-700'],
+    ['Cartões', month.cardExpenses, 'text-purple-600'],
+    ['Dívidas', month.debtExpenses, 'text-rose-600'],
+    ['Total de saídas', month.totalExpenses, 'text-gray-900'],
+    ['Saldo do mês', month.balance, month.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'],
+    ['Saldo projetado em contas', month.projectedAccountsBalance, month.projectedAccountsBalance >= 0 ? 'text-blue-600' : 'text-rose-600'],
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Card className="p-3"><p className="text-xs text-gray-400">Status</p><div className="mt-1"><MonthStatusBadge status={getMonthHealthStatus(month)} /></div></Card>
+        <Card className="p-3"><p className="text-xs text-gray-400">% renda comprometida</p><p className="text-lg font-bold text-gray-900">{formatPercent(commitmentPercent)}</p></Card>
+        <Card className="p-3"><p className="text-xs text-gray-400">Pendente no mês</p><p className="text-lg font-bold text-rose-600">{formatCurrency(month.unpaidExpenses)}</p></Card>
+      </div>
+      <div className="divide-y divide-gray-100 border border-gray-100 rounded-lg overflow-hidden">
+        {rows.map(([label, value, className]) => (
+          <div key={label} className="flex items-center justify-between p-3 bg-white">
+            <span className="text-sm text-gray-500">{label}</span>
+            <span className={`text-sm font-bold ${className}`}>{formatCurrency(value as number)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

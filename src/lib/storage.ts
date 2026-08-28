@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { AppData, Income, Expense, Scenario, Vigencia, CategoryEntry } from './types';
-import { seedData } from './seed';
+import { defaultCategoryClass, seedData } from './seed';
 import { uid, currentMonthKey } from './format';
 import { getSupabase } from './supabaseClient';
 
@@ -191,12 +191,17 @@ function migrateData(data: any): AppData {
   const categories: string[] = data.categories ?? seed.categories;
   let categoryEntries: CategoryEntry[] = data.categoryEntries;
   if (!categoryEntries || !Array.isArray(categoryEntries) || categoryEntries.length === 0) {
-    categoryEntries = categories.map((name: string, i: number) => ({ id: `cat-${i}`, name, active: true }));
+    categoryEntries = categories.map((name: string, i: number) => ({ id: `cat-${i}`, name, active: true, expenseClass: defaultCategoryClass(name) }));
+  } else {
+    categoryEntries = categoryEntries.map((category) => ({
+      ...category,
+      expenseClass: category.expenseClass ?? defaultCategoryClass(category.name),
+    }));
   }
   const existingNames = new Set(categoryEntries.map((c: CategoryEntry) => c.name));
   for (const defName of seed.categories) {
     if (!existingNames.has(defName)) {
-      categoryEntries.push({ id: `cat-${uid()}`, name: defName, active: true });
+      categoryEntries.push({ id: `cat-${uid()}`, name: defName, active: true, expenseClass: defaultCategoryClass(defName) });
       categories.push(defName);
     }
   }

@@ -236,6 +236,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         <Card className="p-4"><p className="text-xs text-gray-400">Gastos Pontuais</p><p className="text-lg font-bold text-gray-900">{formatCurrency(current.variableExpenses)}</p></Card>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5">
+        <ExpenseClassCard title="Essenciais" value={current.essentialExpenses} income={current.income} colorClass="text-emerald-600" />
+        <ExpenseClassCard title="Discricionários" value={current.discretionaryExpenses} income={current.income} colorClass="text-amber-600" />
+        <ExpenseClassCard title="Compromissos financeiros" value={current.financialCommitments} income={current.income} colorClass="text-purple-600" />
+        <ExpenseClassCard title="Outros" value={current.otherExpenses} income={current.income} colorClass="text-gray-700" />
+      </div>
+
       {/* Card limit + Recovery */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
         <Card className="p-4 lg:col-span-1">
@@ -515,5 +522,16 @@ function MetricItem({ label, value, positive, negative }: { label: string; value
       <p className="text-xs text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
     </div>
+  );
+}
+
+function ExpenseClassCard({ title, value, income, colorClass }: { title: string; value: number; income: number; colorClass: string }) {
+  const percent = income > 0 ? (value / income) * 100 : 0;
+  return (
+    <Card className="p-4">
+      <p className="text-xs text-gray-400">{title}</p>
+      <p className={`text-lg font-bold ${colorClass}`}>{formatCurrency(value)}</p>
+      <p className="text-xs text-gray-400 mt-1">{formatPercent(percent)} da renda</p>
+    </Card>
   );
 }

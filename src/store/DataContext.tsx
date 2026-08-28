@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { AppData, Income, Expense, CreditCard, CardPurchase, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
 import { loadLocalData, saveLocalData, loadRemoteData, saveRemoteData, resetData } from '@/lib/storage';
+import { defaultCategoryClass } from '@/lib/seed';
 import { uid, currentMonthKey, addMonths, compareMonths } from '@/lib/format';
 import { getActiveVigencia as getFinanceActiveVigencia, invoiceStatusKey, isExpensePaidForMonth as getFinanceExpensePaidForMonth } from '@/lib/projection';
 import { useAuth } from '@/store/AuthContext';
@@ -45,7 +46,7 @@ interface DataContextValue {
   updateSettings: (updates: Partial<Settings>) => void;
   updateCardMonthlyLimit: (amount: number, monthKey: string, scope: 'this-month' | 'future') => void;
   // Categories
-  addCategory: (name: string) => void;
+  addCategory: (name: string, expenseClass?: CategoryEntry['expenseClass']) => void;
   updateCategory: (id: string, updates: Partial<CategoryEntry>) => void;
   deleteCategory: (id: string) => void;
   toggleCategory: (id: string) => void;
@@ -368,10 +369,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addHistory('edição', 'configuração', 'Configurações alteradas.');
   }, [addHistory]);
 
-  const addCategory = useCallback((name: string) => {
+  const addCategory = useCallback((name: string, expenseClass?: CategoryEntry['expenseClass']) => {
     setData((prev) => {
       if (prev.categories.includes(name)) return prev;
-      const entry: CategoryEntry = { id: uid(), name, active: true };
+      const entry: CategoryEntry = { id: uid(), name, active: true, expenseClass: expenseClass ?? defaultCategoryClass(name) };
       return {
         ...prev,
         categories: [...prev.categories, name],

@@ -13,6 +13,7 @@ import {
   getAccountBalanceSnapshotForMonth,
   getCardInvoiceForMonth,
   getInvoiceStatus,
+  getMonthHealthStatus,
   getActiveVigencia,
   incomeAmountForMonth,
   getMonthlyFinancialSummary,
@@ -302,6 +303,32 @@ test('resumo mensal diferencia previsto, realizado, pago, pendente e variação'
   assert.equal(Math.round(summary.expenseVariancePercent * 100) / 100, 3.53);
 });
 
+test('resumo mensal separa essenciais, discricionários e compromissos financeiros', () => {
+  const data = baseData();
+  data.categoryEntries = [
+    { id: 'cat-home', name: 'Moradia', active: true, expenseClass: 'essential' },
+    { id: 'cat-fun', name: 'Lazer', active: true, expenseClass: 'lifestyle' },
+    { id: 'cat-loan', name: 'Empréstimos', active: true, expenseClass: 'financial' },
+    { id: 'cat-misc', name: 'Outros', active: true, expenseClass: 'other' },
+  ];
+  data.expenses = [
+    expense({ id: 'home', category: 'Moradia', vigencias: [{ id: 'vig-home', amount: 1000, startDate: '2026-08', endDate: null }] }),
+    expense({ id: 'misc', category: 'Outros', vigencias: [{ id: 'vig-misc', amount: 50, startDate: '2026-08', endDate: null }] }),
+  ];
+  data.purchases = [
+    purchase({ id: 'fun', category: 'Lazer', totalAmount: 300, installments: 1, firstInvoiceMonth: '2026-08' }),
+    purchase({ id: 'loan-card', category: 'Empréstimos', totalAmount: 200, installments: 1, firstInvoiceMonth: '2026-08' }),
+  ];
+  data.debts = [debt({ installmentAmount: 400, installmentsRemaining: 1 })];
+
+  const summary = getMonthlyFinancialSummary(data, '2026-08');
+
+  assert.equal(summary.essentialExpenses, 1000);
+  assert.equal(summary.discretionaryExpenses, 300);
+  assert.equal(summary.financialCommitments, 600);
+  assert.equal(summary.otherExpenses, 50);
+});
+
 test('orçamento por categoria respeita vigência e soma gastos diretos e cartão', () => {
   const data = baseData();
   data.categoryBudgets = [
@@ -423,6 +450,26 @@ test('central de alertas deriva riscos financeiros sem duplicar ids', () => {
   assert.equal(alerts.some((alert) => alert.type === 'expense-growth'), true);
 });
 
+test('alerta de reserva baixa usa gastos essenciais classificados', () => {
+  const data = baseData();
+  data.settings.reserveTargetMonths = 3;
+  data.bankAccounts = [{ id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: 2000 }];
+  data.categoryEntries = [
+    { id: 'cat-home', name: 'Moradia', active: true, expenseClass: 'essential' },
+    { id: 'cat-fun', name: 'Lazer', active: true, expenseClass: 'lifestyle' },
+  ];
+  data.expenses = [
+    expense({ id: 'home', category: 'Moradia', vigencias: [{ id: 'vig-home', amount: 1000, startDate: '2026-08', endDate: null }] }),
+    expense({ id: 'fun', category: 'Lazer', vigencias: [{ id: 'vig-fun', amount: 5000, startDate: '2026-08', endDate: null }] }),
+  ];
+
+  const alerts = generateAlerts(data, projectMonths(data, 1, '2026-08'));
+  const reserveAlert = alerts.find((alert) => alert.type === 'low-reserve');
+
+  assert.equal(reserveAlert?.value, 2);
+  assert.equal(reserveAlert?.description.includes('gastos essenciais mensais de R$ 1.000,00'), true);
+});
+
 test('Planejamento e Projeção consomem o mesmo resumo mensal', () => {
   const data = baseData();
   data.incomes = [income()];
@@ -439,6 +486,21 @@ test('Planejamento e Projeção consomem o mesmo resumo mensal', () => {
   assert.equal(planning.prazoExpenses[0].amount, projection.prazoExpenses);
   assert.equal(planning.cards[0].amount, projection.cardExpenses);
   assert.equal(planning.debts[0].amount, projection.debtExpenses);
+});
+
+test('status da projeção identifica meses saudáveis, atenção e críticos', () => {
+  const data = baseData();
+  data.bankAccounts = [{ id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: 5000 }];
+  data.incomes = [income({ vigencias: [{ id: 'vig-income', amount: 5000, startDate: '2026-08', endDate: null }] })];
+
+  data.expenses = [expense({ vigencias: [{ id: 'vig-healthy', amount: 1000, startDate: '2026-08', endDate: null }] })];
+  assert.equal(getMonthHealthStatus(projectMonths(data, 1, '2026-08').months[0]), 'saudavel');
+
+  data.expenses = [expense({ vigencias: [{ id: 'vig-warning', amount: 4600, startDate: '2026-08', endDate: null }] })];
+  assert.equal(getMonthHealthStatus(projectMonths(data, 1, '2026-08').months[0]), 'atencao');
+
+  data.expenses = [expense({ vigencias: [{ id: 'vig-critical', amount: 6000, startDate: '2026-08', endDate: null }] })];
+  assert.equal(getMonthHealthStatus(projectMonths(data, 1, '2026-08').months[0]), 'critico');
 });
 
 test('limite disponível do cartão libera parcela paga somente no mês seguinte', () => {

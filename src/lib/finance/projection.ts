@@ -6,7 +6,7 @@ import { getCardMonthlyLimit, purchaseInstallmentForMonth } from './cardRules';
 import { getExceededCategoryBudgets } from './categoryBudgetRules';
 import { debtPaymentForMonth } from './debtRules';
 import { expenseAmountForMonth } from './expenseRules';
-import type { FinancialAlert, FinancialAlertSeverity, MonthProjection, ProjectionResult } from './types';
+import type { FinancialAlert, FinancialAlertSeverity, MonthHealthStatus, MonthProjection, ProjectionResult } from './types';
 
 export function projectMonths(data: AppData, count = 360, startMonth?: string): ProjectionResult {
   const start = startMonth ?? currentMonthKey();
@@ -104,6 +104,13 @@ export function recoveryProgress(data: AppData, projection: ProjectionResult): {
   if (reserve >= monthlyExpenses * 3 && !hasNegative && commitment < 70) { steps[5].done = true; doneCount++; }
 
   return { percent: Math.round((doneCount / steps.length) * 100), steps };
+}
+
+export function getMonthHealthStatus(month: MonthProjection): MonthHealthStatus {
+  if (month.balance < 0 || month.projectedAccountsBalance < 0) return 'critico';
+  const commitment = month.income > 0 ? (month.totalExpenses / month.income) * 100 : 100;
+  if (commitment >= 90 || month.balance < month.income * 0.05) return 'atencao';
+  return 'saudavel';
 }
 
 export function generateAlerts(data: AppData, projection: ProjectionResult): FinancialAlert[] {
@@ -243,7 +250,7 @@ export function generateAlerts(data: AppData, projection: ProjectionResult): Fin
     }
   }
 
-  const essentialExpenses = current.fixedExpenses + current.prazoExpenses + current.debtExpenses;
+  const essentialExpenses = current.essentialExpenses;
   const reserveBalance = totalBankBalance(data);
   if (essentialExpenses > 0) {
     const monthsCovered = reserveBalance / essentialExpenses;
