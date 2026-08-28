@@ -1,0 +1,481 @@
+import { useState, useMemo } from 'react';
+import { Plus, Edit2, Trash2, Copy, CreditCard as CreditCardIcon, ArrowLeft, AlertTriangle, TrendingUp, Calendar, Info, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useData } from '@/store/DataContext';
+import { useMonth } from '@/store/MonthContext';
+import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, type InvoiceStatus } from '@/lib/projection';
+import { formatCurrency, monthLabelShort, monthShort, currentMonthKey, formatMonthBR, addMonths } from '@/lib/format';
+import type { CreditCard, CardPurchase } from '@/lib/types';
+import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, ProgressBar, EmptyState, CurrencyInput, MonthPicker, PersonSelect, IconButton } from '@/components/ui';
+
+const CARD_COLORS = ['#EC4899', '#F59E0B', '#8B5CF6', '#3B82F6', '#10B981', '#EF4444', '#14B8A6', '#6B7280'];
+
+export function CartoesPage() {
+  const { data, addCard, updateCard, deleteCard, addPerson, toggleInvoicePaid, isInvoicePaid } = useData();
+  const { selectedMonth } = useMonth();
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [cardModalOpen, setCardModalOpen] = useState(false);
+  const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
+  const [confirmDeleteCard, setConfirmDeleteCard] = useState<string | null>(null);
+
+  const [cardForm, setCardForm] = useState<Omit<CreditCard, 'id'>>({
+    name: '', bank: '', holder: '', limit: 0, closingDay: 1, dueDay: 1, color: '#3B82F6',
+  });
+
+  const selectedCard = data.cards.find((c) => c.id === selectedCardId);
+
+  if (selectedCard) {
+    return <CardDetail card={selectedCard} onBack={() => setSelectedCardId(null)} />;
+  }
+
+  const openAddCard = () => {
+    setEditingCard(null);
+    setCardForm({ name: '', bank: '', holder: '', limit: 0, closingDay: 1, dueDay: 1, color: '#3B82F6' });
+    setCardModalOpen(true);
+  };
+
+  const openEditCard = (card: CreditCard) => {
+    setEditingCard(card);
+    setCardForm({ ...card });
+    setCardModalOpen(true);
+  };
+
+  const saveCard = () => {
+    if (!cardForm.name) return;
+    if (editingCard) {
+      updateCard(editingCard.id, cardForm);
+    } else {
+      addCard(cardForm);
+    }
+    setCardModalOpen(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Cartões de Crédito</h1>
+          <p className="text-sm text-gray-500">Competência: {formatMonthBR(selectedMonth)} · {data.cards.length} cartão(ões)</p>
+        </div>
+        <Button onClick={openAddCard}><Plus size={16} className="inline mr-1" /> Adicionar cartão</Button>
+      </div>
+
+      {data.cards.length === 0 ? (
+        <Card className="p-8">
+          <EmptyState icon={<CreditCardIcon size={48} />} title="Nenhum cartão cadastrado" message="Adicione seu primeiro cartão de crédito para começar a controlar suas faturas e compras parceladas." action={<Button onClick={openAddCard}><Plus size={16} className="inline mr-1" /> Adicionar primeiro cartão</Button>} />
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {data.cards.map((card) => {
+            const util = cardUtilization(data, card, selectedMonth);
+            const utilPct = card.limit > 0 ? (util.used / card.limit) * 100 : 0;
+            const color = utilPct > 80 ? 'red' : utilPct > 50 ? 'yellow' : 'green';
+            return (
+              <Card key={card.id} className="p-4 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedCardId(card.id)}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: card.color }} />
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{card.name}</h3>
+                      <p className="text-xs text-gray-400">{card.bank} · {card.holder}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <IconButton icon={<Edit2 size={14} />} label="Editar cartão" onClick={() => openEditCard(card)} />
+                    <IconButton icon={<Trash2 size={14} />} label="Excluir cartão" variant="danger" onClick={() => setConfirmDeleteCard(card.id)} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">Limite</span><span className="font-medium text-gray-700">{formatCurrency(card.limit)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">Fatura de {formatMonthBR(selectedMonth)}</span><span className="font-medium text-gray-900">{formatCurrency(util.currentInvoice)}</span></div>
+                  <InvoiceStatusBadge data={data} card={card} monthKey={selectedMonth} invoiceAmount={util.currentInvoice} />
+                  {util.currentInvoice > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleInvoicePaid(card.id, selectedMonth); }}
+                      className={`w-full text-sm font-medium py-2 px-3 rounded-lg transition-colors ${isInvoicePaid(card.id, selectedMonth) ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
+                    >
+                      {isInvoicePaid(card.id, selectedMonth) ? <><Circle size={14} className="inline mr-1" /> Desmarcar pagamento</> : <><CheckCircle2 size={14} className="inline mr-1" /> Marcar fatura como paga</>}
+                    </button>
+                  )}
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">Próxima fatura</span><span className="font-medium text-gray-700">{formatCurrency(util.nextInvoice)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">Parcelado futuro</span><span className="font-medium text-amber-600">{formatCurrency(util.futureInstallments)}</span></div>
+                  <div className="pt-1">
+                    <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Utilizado</span><span className="text-gray-600">{formatCurrency(util.used)} ({utilPct.toFixed(0)}%)</span></div>
+                    <ProgressBar value={util.used} max={card.limit} color={color} />
+                  </div>
+                  <div className="flex justify-between text-sm pt-1"><span className="text-gray-400">Disponível</span><span className="font-bold text-emerald-600">{formatCurrency(util.available)}</span></div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <Modal open={cardModalOpen} onClose={() => setCardModalOpen(false)} title={editingCard ? 'Editar cartão' : 'Novo cartão'} footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setCardModalOpen(false)}>Cancelar</Button>
+          <Button onClick={saveCard} disabled={!cardForm.name}>{editingCard ? 'Salvar' : 'Adicionar'}</Button>
+        </div>
+      }>
+        <form onSubmit={(e) => { e.preventDefault(); saveCard(); }} className="space-y-3">
+          <Input label="Nome do cartão" value={cardForm.name} onChange={(v) => setCardForm({ ...cardForm, name: v })} placeholder="Ex: Itaú Thais" required />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Banco" value={cardForm.bank} onChange={(v) => setCardForm({ ...cardForm, bank: v })} placeholder="Ex: Itaú" />
+            <PersonSelect label="Titular" value={cardForm.holder} onChange={(v) => setCardForm({ ...cardForm, holder: v })} people={data.people} onAddPerson={addPerson} />
+          </div>
+          <CurrencyInput label="Limite" value={cardForm.limit} onChange={(v) => setCardForm({ ...cardForm, limit: v })} required />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Dia de fechamento" type="number" value={cardForm.closingDay} onChange={(v) => setCardForm({ ...cardForm, closingDay: parseInt(v) || 1 })} />
+            <Input label="Dia de vencimento" type="number" value={cardForm.dueDay} onChange={(v) => setCardForm({ ...cardForm, dueDay: parseInt(v) || 1 })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cor de identificação</label>
+            <div className="flex gap-2 flex-wrap">
+              {CARD_COLORS.map((c) => (
+                <button key={c} type="button" onClick={() => setCardForm({ ...cardForm, color: c })} className={`w-8 h-8 rounded-full border-2 ${cardForm.color === c ? 'border-gray-900' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+          <button type="submit" className="hidden" aria-hidden="true" />
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDeleteCard}
+        title="Excluir cartão"
+        message="Tem certeza que deseja excluir este cartão? Todas as compras associadas também serão removidas."
+        onConfirm={() => { if (confirmDeleteCard) deleteCard(confirmDeleteCard); setConfirmDeleteCard(null); }}
+        onCancel={() => setConfirmDeleteCard(null)}
+        confirmText="Excluir"
+      />
+    </div>
+  );
+
+  function CardDetail({ card, onBack }: { card: CreditCard; onBack: () => void }) {
+    const { data, addPurchase, updatePurchase, deletePurchase, duplicatePurchase, toggleInvoicePaid, isInvoicePaid } = useData();
+    const { selectedMonth } = useMonth();
+    const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
+    const [editingPurchase, setEditingPurchase] = useState<CardPurchase | null>(null);
+    const [confirmDeletePurchase, setConfirmDeletePurchase] = useState<string | null>(null);
+    const [invoiceModalMonth, setInvoiceModalMonth] = useState<string | null>(null);
+
+    const [purchaseForm, setPurchaseForm] = useState({
+      cardId: '', name: '', installmentAmount: 0, installments: 1, currentInstallment: 1,
+      category: 'Outros', note: '',
+    });
+
+    const [showImpact, setShowImpact] = useState(false);
+
+    const projection = useMemo(() => cardProjection(data, card, 12, selectedMonth), [data, card, selectedMonth]);
+    const util = useMemo(() => cardUtilization(data, card, selectedMonth), [data, card, selectedMonth]);
+    const cardPurchases = data.purchases.filter((p) => p.cardId === card.id);
+    const utilPct = card.limit > 0 ? (util.used / card.limit) * 100 : 0;
+    const color = utilPct > 80 ? 'red' : utilPct > 50 ? 'yellow' : 'green';
+
+    const chartData = projection.map((m) => ({ month: monthShort(m.monthKey), Fatura: Math.round(m.amount) }));
+
+    const openAddPurchase = () => {
+      setEditingPurchase(null);
+      setPurchaseForm({
+        cardId: card.id, name: '', installmentAmount: 0, installments: 1, currentInstallment: 1,
+        category: 'Outros', note: '',
+      });
+      setShowImpact(false);
+      setPurchaseModalOpen(true);
+    };
+
+    const openEditPurchase = (pur: CardPurchase) => {
+      setEditingPurchase(pur);
+      const instAmt = pur.installments > 0 ? pur.totalAmount / pur.installments : 0;
+      const status = purchaseInstallmentStatus(pur, selectedMonth);
+      setPurchaseForm({
+        cardId: pur.cardId, name: pur.name, installmentAmount: instAmt,
+        installments: pur.installments, currentInstallment: status.currentInstallment,
+        category: pur.category, note: pur.note ?? '',
+      });
+      setShowImpact(false);
+      setPurchaseModalOpen(true);
+    };
+
+    const savePurchase = () => {
+      if (!purchaseForm.name || purchaseForm.installmentAmount <= 0 || purchaseForm.installments < 1) return;
+      if (purchaseForm.currentInstallment < 1 || purchaseForm.currentInstallment > purchaseForm.installments) return;
+      // Calculate total from installment amount × installments
+      const totalAmount = Math.round(purchaseForm.installmentAmount * purchaseForm.installments * 100) / 100;
+      // Derive firstInvoiceMonth: currentInstallment=1 means first invoice is the selected month
+      // currentInstallment=2 means first invoice was previous month, etc.
+      const firstInvoiceMonth = addMonths(selectedMonth, -(purchaseForm.currentInstallment - 1));
+      const purchaseDate = `${firstInvoiceMonth}-01`;
+      const payload: Omit<CardPurchase, 'id'> = {
+        cardId: purchaseForm.cardId, name: purchaseForm.name, totalAmount,
+        installments: purchaseForm.installments, purchaseDate, firstInvoiceMonth,
+        category: purchaseForm.category, note: purchaseForm.note,
+      };
+      if (editingPurchase) {
+        updatePurchase(editingPurchase.id, payload);
+      } else {
+        addPurchase(payload);
+      }
+      setPurchaseModalOpen(false);
+    };
+
+    const impact = useMemo(() => {
+      if (!showImpact || purchaseForm.installmentAmount <= 0 || purchaseForm.installments < 1) return null;
+      const total = purchaseForm.installmentAmount * purchaseForm.installments;
+      const firstMonth = addMonths(selectedMonth, -(purchaseForm.currentInstallment - 1));
+      return simulatePurchase(data, card.id, total, purchaseForm.installments, `${firstMonth}-01`, selectedMonth);
+    }, [showImpact, purchaseForm, data, card.id, selectedMonth]);
+
+    const calculatedTotal = purchaseForm.installments > 0 ? purchaseForm.installmentAmount * purchaseForm.installments : 0;
+
+    const invoiceItems = invoiceModalMonth ? cardInvoiceDetail(data, card.id, invoiceModalMonth) : [];
+    const invoiceTotal = invoiceItems.reduce((s, i) => s + i.amount, 0);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft size={20} className="text-gray-600" /></button>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full" style={{ backgroundColor: card.color }} />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{card.name}</h1>
+              <p className="text-sm text-gray-500">{card.bank} · {card.holder}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Card info */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="p-3"><p className="text-xs text-gray-400">Limite</p><p className="text-lg font-bold text-gray-900">{formatCurrency(card.limit)}</p></Card>
+          <Card className="p-3"><p className="text-xs text-gray-400">Fatura de {formatMonthBR(selectedMonth)}</p><p className="text-lg font-bold text-gray-900">{formatCurrency(util.currentInvoice)}</p></Card>
+          <Card className="p-3"><p className="text-xs text-gray-400">Próxima fatura</p><p className="text-lg font-bold text-gray-900">{formatCurrency(util.nextInvoice)}</p></Card>
+          <Card className="p-3"><p className="text-xs text-gray-400">Disponível</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(util.available)}</p></Card>
+        </div>
+
+        {/* Invoice status + pay button */}
+        {util.currentInvoice > 0 && (
+          <Card className="p-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <InvoiceStatusBadge data={data} card={card} monthKey={selectedMonth} invoiceAmount={util.currentInvoice} />
+                <span className="text-xs text-gray-400">Vencimento: dia {card.dueDay} de {formatMonthBR(selectedMonth)}</span>
+              </div>
+              <button
+                onClick={() => toggleInvoicePaid(card.id, selectedMonth)}
+                className={`text-sm font-medium py-2 px-4 rounded-lg transition-colors ${isInvoicePaid(card.id, selectedMonth) ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
+              >
+                {isInvoicePaid(card.id, selectedMonth) ? <><Circle size={14} className="inline mr-1" /> Desmarcar pagamento</> : <><CheckCircle2 size={14} className="inline mr-1" /> Marcar fatura como paga</>}
+              </button>
+            </div>
+          </Card>
+        )}
+
+        <Card className="p-4">
+          <div className="flex justify-between text-sm mb-2">
+            <span className="text-gray-400">Limite utilizado</span>
+            <span className="text-gray-600">{formatCurrency(util.used)} ({utilPct.toFixed(0)}%)</span>
+          </div>
+          <ProgressBar value={util.used} max={card.limit} color={color} />
+        </Card>
+
+        {/* Projection chart - clickable months */}
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Faturas · 12 meses a partir de {formatMonthBR(selectedMonth)}</h3>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
+              <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+              <Bar dataKey="Fatura" fill={card.color} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            {projection.map((m) => (
+              <button key={m.monthKey} onClick={() => setInvoiceModalMonth(m.monthKey)} className="p-2.5 bg-gray-50 hover:bg-blue-50 rounded-lg text-left transition-colors">
+                <p className="text-xs text-gray-400">{monthLabelShort(m.monthKey)}</p>
+                <p className="text-sm font-bold text-gray-900">{formatCurrency(m.amount)}</p>
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        {/* Purchases */}
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-700">Compras ({cardPurchases.length})</h3>
+            <Button size="sm" onClick={openAddPurchase}><Plus size={14} className="inline mr-1" /> Nova compra</Button>
+          </div>
+          {cardPurchases.length === 0 ? (
+            <EmptyState title="Nenhuma compra" message="Adicione uma compra parcelada para vê-la nas faturas futuras." action={<Button size="sm" onClick={openAddPurchase}><Plus size={14} className="inline mr-1" /> Nova compra</Button>} />
+          ) : (
+            <div className="space-y-3">
+              {cardPurchases.map((pur) => {
+                const instAmt = pur.totalAmount / pur.installments;
+                const status = purchaseInstallmentStatus(pur, selectedMonth);
+                return (
+                  <div key={pur.id} className="p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">{pur.name}</p>
+                        <p className="text-xs text-gray-400">{pur.installments}x de {formatCurrency(instAmt)} · {formatCurrency(pur.totalAmount)}</p>
+                        <p className="text-xs text-gray-400">Categoria: {pur.category} · Primeira fatura: {formatMonthBR(pur.firstInvoiceMonth)}</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <IconButton icon={<Edit2 size={14} />} label="Editar compra" onClick={() => openEditPurchase(pur)} />
+                        <IconButton icon={<Copy size={14} />} label="Duplicar compra" onClick={() => duplicatePurchase(pur.id)} />
+                        <IconButton icon={<Trash2 size={14} />} label="Excluir compra" variant="danger" onClick={() => setConfirmDeletePurchase(pur.id)} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div className="text-center p-2 bg-white rounded-lg"><p className="text-xs text-gray-400">Parcela atual</p><p className="text-sm font-bold text-blue-600">{status.currentInstallment} de {pur.installments}</p></div>
+                      <div className="text-center p-2 bg-white rounded-lg"><p className="text-xs text-gray-400">Restante</p><p className="text-sm font-bold text-amber-600">{status.remaining} parcela(s)</p></div>
+                      <div className="text-center p-2 bg-white rounded-lg"><p className="text-xs text-gray-400">Saldo restante</p><p className="text-sm font-bold text-gray-900">{formatCurrency(status.remainingBalance)}</p></div>
+                    </div>
+                    {pur.note && <p className="text-xs text-gray-500 mt-2 italic">{pur.note}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        {/* Purchase Modal */}
+        <Modal open={purchaseModalOpen} onClose={() => { setPurchaseModalOpen(false); setShowImpact(false); }} title={editingPurchase ? 'Editar compra' : 'Nova compra'} size="lg" footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => { setPurchaseModalOpen(false); setShowImpact(false); }}>Cancelar</Button>
+            <Button onClick={savePurchase} disabled={!purchaseForm.name || purchaseForm.installmentAmount <= 0 || purchaseForm.installments < 1 || purchaseForm.currentInstallment < 1 || purchaseForm.currentInstallment > purchaseForm.installments}>{editingPurchase ? 'Salvar' : 'Adicionar'}</Button>
+          </div>
+        }>
+          <form onSubmit={(e) => { e.preventDefault(); savePurchase(); }} className="space-y-3">
+            <Input label="Nome da compra" value={purchaseForm.name} onChange={(v) => setPurchaseForm({ ...purchaseForm, name: v })} placeholder="Ex: Notebook" required />
+            <CurrencyInput label="Valor da parcela" value={purchaseForm.installmentAmount} onChange={(v) => setPurchaseForm({ ...purchaseForm, installmentAmount: v })} required />
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Quantidade de parcelas" type="number" value={purchaseForm.installments} onChange={(v) => {
+                const n = parseInt(v) || 1;
+                setPurchaseForm({ ...purchaseForm, installments: n, currentInstallment: Math.min(purchaseForm.currentInstallment, n) });
+              }} required />
+              <Select label="Parcela atual" value={String(purchaseForm.currentInstallment)} onChange={(v) => setPurchaseForm({ ...purchaseForm, currentInstallment: parseInt(v) })} options={Array.from({ length: purchaseForm.installments }, (_, i) => ({ value: String(i + 1), label: `${i + 1} de ${purchaseForm.installments}` }))} />
+            </div>
+            {purchaseForm.installments > 0 && purchaseForm.installmentAmount > 0 && (
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">Total da compra: <strong>{formatCurrency(calculatedTotal)}</strong></p>
+                <p className="text-xs text-blue-500 mt-1">{purchaseForm.installments}x de {formatCurrency(purchaseForm.installmentAmount)} · Parcela atual: {purchaseForm.currentInstallment}/{purchaseForm.installments}</p>
+              </div>
+            )}
+            <Select label="Categoria" value={purchaseForm.category} onChange={(v) => setPurchaseForm({ ...purchaseForm, category: v })} options={data.categories.map((c) => ({ value: c, label: c }))} />
+            <TextArea label="Observação" value={purchaseForm.note} onChange={(v) => setPurchaseForm({ ...purchaseForm, note: v })} />
+
+            {/* Impact analysis */}
+            {!editingPurchase && purchaseForm.installmentAmount > 0 && purchaseForm.installments > 0 && (
+              <div>
+                <button type="button" onClick={() => setShowImpact(!showImpact)} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
+                  <TrendingUp size={14} /> {showImpact ? 'Ocultar' : 'Ver'} impacto desta compra
+                </button>
+                {showImpact && impact && (
+                  <div className="mt-3 p-3 bg-gray-50 rounded-lg space-y-3">
+                    <h4 className="text-sm font-semibold text-gray-700">Impacto nas faturas</h4>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {impact.before.slice(0, 8).map((before, i) => {
+                        const after = impact.after[i];
+                        const diff = after.cardByCard[card.id] - before.cardByCard[card.id];
+                        if (diff === 0) return null;
+                        return (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">{monthShort(before.monthKey)}</span>
+                            <span className="text-gray-400">{formatCurrency(before.cardByCard[card.id] || 0)} →</span>
+                            <span className="font-medium text-gray-900">{formatCurrency(after.cardByCard[card.id] || 0)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {impact.negativeMonths.length > 0 && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg">
+                        <div className="flex items-center gap-2 mb-1">
+                          <AlertTriangle size={16} className="text-rose-500" />
+                          <span className="text-sm font-semibold text-rose-700">ATENÇÃO</span>
+                        </div>
+                        {impact.negativeMonths.map((nm) => (
+                          <p key={nm.monthKey} className="text-xs text-rose-600">Esta compra fará o saldo de {monthLabelShort(nm.monthKey)} ficar negativo em {formatCurrency(Math.abs(nm.after))}.</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <button type="submit" className="hidden" aria-hidden="true" />
+          </form>
+        </Modal>
+
+        {/* Invoice detail modal */}
+        <Modal open={!!invoiceModalMonth} onClose={() => setInvoiceModalMonth(null)} title={invoiceModalMonth ? `Fatura · ${monthLabelShort(invoiceModalMonth)}` : ''} footer={
+          invoiceModalMonth && invoiceTotal > 0 ? (
+            <div className="flex items-center justify-between w-full">
+              <InvoiceStatusBadge data={data} card={card} monthKey={invoiceModalMonth} invoiceAmount={invoiceTotal} />
+              <button
+                onClick={() => toggleInvoicePaid(card.id, invoiceModalMonth)}
+                className={`text-sm font-medium py-2 px-4 rounded-lg transition-colors ${isInvoicePaid(card.id, invoiceModalMonth) ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
+              >
+                {isInvoicePaid(card.id, invoiceModalMonth) ? <><Circle size={14} className="inline mr-1" /> Desmarcar pagamento</> : <><CheckCircle2 size={14} className="inline mr-1" /> Marcar fatura como paga</>}
+              </button>
+            </div>
+          ) : undefined
+        }>
+          {invoiceModalMonth && (
+            <div className="space-y-3">
+              {invoiceItems.length === 0 ? (
+                <p className="text-sm text-gray-400">Nenhuma parcela neste mês.</p>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    {invoiceItems.map((item) => (
+                      <div key={`${item.purchaseId}-${item.installmentNumber}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">{item.name}</p>
+                          <p className="text-xs text-gray-400">{item.installmentNumber}/{item.totalInstallments} · {item.category}</p>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">{formatCurrency(item.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                    <span className="text-sm font-semibold text-blue-700">Total da fatura</span>
+                    <span className="text-sm font-bold text-blue-900">{formatCurrency(invoiceTotal)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </Modal>
+
+        <ConfirmDialog
+          open={!!confirmDeletePurchase}
+          title="Excluir compra"
+          message="Excluir todas as parcelas desta compra? Todas as parcelas futuras serão removidas."
+          onConfirm={() => { if (confirmDeletePurchase) deletePurchase(confirmDeletePurchase); setConfirmDeletePurchase(null); }}
+          onCancel={() => setConfirmDeletePurchase(null)}
+          confirmText="Excluir todas as parcelas"
+        />
+      </div>
+    );
+  }
+}
+
+function InvoiceStatusBadge({ data, card, monthKey, invoiceAmount }: { data: import('@/lib/types').AppData; card: CreditCard; monthKey: string; invoiceAmount: number }) {
+  const status = getInvoiceStatus(data, card, monthKey, invoiceAmount);
+  if (status === 'sem_fatura') return null;
+  const config: Record<InvoiceStatus, { label: string; color: 'green' | 'yellow' | 'red' | 'gray'; icon: React.ReactNode }> = {
+    pago: { label: 'Pago', color: 'green', icon: <CheckCircle2 size={12} /> },
+    pendente: { label: 'Pendente', color: 'yellow', icon: <Circle size={12} /> },
+    vencido: { label: 'Vencido', color: 'red', icon: <AlertCircle size={12} /> },
+    sem_fatura: { label: '', color: 'gray', icon: null },
+  };
+  const c = config[status];
+  return (
+    <div className="flex justify-between items-center text-sm">
+      <span className="text-gray-400">Status da fatura</span>
+      <Badge color={c.color}>{c.icon} {c.label}</Badge>
+    </div>
+  );
+}

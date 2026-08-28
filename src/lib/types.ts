@@ -1,0 +1,196 @@
+export type Recurrence = 'mensal' | 'unica' | 'semanal' | 'personalizada';
+
+export type ExpenseType = 'Fixo' | 'Prazo' | 'Pontual';
+
+export type PaymentMethod = 'Dinheiro' | 'Débito' | 'Crédito' | 'PIX' | 'Boleto' | 'Transferência';
+
+export type Person = string;
+
+export type IncomeType = string;
+
+export type IncomeKind = 'fixa' | 'variavel' | 'determinada';
+
+export interface PersonEntry {
+  id: string;
+  name: string;
+  note?: string;
+  active: boolean;
+}
+
+export type DebtStatus = 'Em aberto' | 'Negociação' | 'Parcelada' | 'Quitada';
+
+export type ScenarioType = 'Conservador' | 'Atual' | 'Otimista';
+
+export type EntryStatus = 'previsto' | 'realizado';
+
+/**
+ * A vigência record represents a value that was active during a date range.
+ * Used for versioning recurring incomes/expenses without overwriting history.
+ */
+export interface Vigencia {
+  id: string;
+  amount: number;
+  startDate: string; // YYYY-MM
+  endDate: string | null; // YYYY-MM, null = open-ended
+}
+
+export interface Income {
+  id: string;
+  name: string;
+  type: IncomeType;
+  kind: IncomeKind;
+  person: Person;
+  dueDay: number;
+  note?: string;
+  active: boolean;
+  vigencias: Vigencia[];
+  status: EntryStatus;
+  realizedAmount?: number | null;
+  // For variable incomes: the specific month this income belongs to
+  competenceMonth?: string; // YYYY-MM
+  // Legacy fields kept for migration
+  amount?: number;
+  startDate?: string;
+  endDate?: string | null;
+  recurrence?: Recurrence;
+  overrides?: Record<string, number>;
+}
+
+export interface Expense {
+  id: string;
+  description: string;
+  category: string;
+  type: ExpenseType;
+  person: Person;
+  paymentMethod: PaymentMethod;
+  dueDay: number;
+  note?: string;
+  paid: boolean;
+  /** Per-month payment status: key = YYYY-MM, value = true if paid that month */
+  paidMonths?: Record<string, boolean>;
+  active: boolean;
+  status: EntryStatus;
+  realizedAmount?: number | null;
+  vigencias: Vigencia[];
+  // For one-time expenses: the specific month
+  competenceMonth?: string; // YYYY-MM
+  // Legacy fields kept for migration
+  amount?: number;
+  date?: string; // YYYY-MM-DD
+  endDate?: string | null;
+  recurrence?: Recurrence;
+  cardId?: string | null;
+}
+
+export interface CardPurchase {
+  id: string;
+  cardId: string;
+  name: string;
+  totalAmount: number;
+  installments: number;
+  purchaseDate: string; // YYYY-MM-DD
+  firstInvoiceMonth: string; // YYYY-MM
+  category: string;
+  note?: string;
+}
+
+export interface CreditCard {
+  id: string;
+  name: string;
+  bank: string;
+  holder: string;
+  limit: number;
+  closingDay: number;
+  dueDay: number;
+  color: string;
+}
+
+export interface Debt {
+  id: string;
+  name: string;
+  institution: string;
+  balance: number;
+  installmentAmount: number;
+  installmentsRemaining: number;
+  interestRate?: number;
+  dueDate: string; // YYYY-MM-DD
+  status: DebtStatus;
+  person?: Person;
+  note?: string;
+}
+
+export interface Scenario {
+  id: string;
+  name: string;
+  type: ScenarioType;
+  incomeOverrides: Record<string, number>;
+  description?: string;
+}
+
+export interface Settings {
+  cardMonthlyLimit: number;
+  reserveTargetMonths: number;
+  reserveFloor: number;
+  surplusReserve: number;
+  surplusNextMonth: number;
+  surplusDebt: number;
+  surplusFree: number;
+}
+
+export interface HistoryEntry {
+  id: string;
+  timestamp: string;
+  action: string;
+  entity: string;
+  detail: string;
+}
+
+export interface PendingExpense {
+  id: string;
+  name: string;
+  suggestedCategory: string;
+  added: boolean;
+}
+
+export interface BankAccount {
+  id: string;
+  bank: string;
+  name: string;
+  holder: string;
+  balance: number;
+  note?: string;
+}
+
+export interface BankBalanceSnapshot {
+  id: string;
+  accountId: string;
+  balance: number;
+  date: string; // YYYY-MM-DD
+  monthKey: string; // YYYY-MM
+}
+
+export interface CategoryEntry {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+export interface AppData {
+  incomes: Income[];
+  expenses: Expense[];
+  cards: CreditCard[];
+  purchases: CardPurchase[];
+  debts: Debt[];
+  scenarios: Scenario[];
+  settings: Settings;
+  history: HistoryEntry[];
+  pendingExpenses: PendingExpense[];
+  categories: string[];
+  categoryEntries: CategoryEntry[];
+  bankAccounts: BankAccount[];
+  bankBalanceSnapshots: BankBalanceSnapshot[];
+  people: PersonEntry[];
+  incomeTypes: string[];
+  /** Per-card, per-month invoice payment status. Key format: `${cardId}|YYYY-MM`, value: true if paid. */
+  cardInvoiceStatus?: Record<string, boolean>;
+}
