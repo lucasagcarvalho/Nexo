@@ -620,6 +620,7 @@ export function applyVigenciaChange(
   vigencias: Vigencia[],
   changeMonth: string,
   newAmount: number,
+  newEndDate: string | null = null,
 ): Vigencia[] {
   const prevMonth = addMonths(changeMonth, -1);
   const updated: Vigencia[] = vigencias.map((v) => {
@@ -636,7 +637,7 @@ export function applyVigenciaChange(
     id: uid(),
     amount: newAmount,
     startDate: changeMonth,
-    endDate: null,
+    endDate: newEndDate,
   });
   // Sort by startDate
   return updated.sort((a, b) => compareMonths(a.startDate, b.startDate));

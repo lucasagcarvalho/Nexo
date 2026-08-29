@@ -3,7 +3,7 @@ import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon,
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Area, AreaChart } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { cardInvoiceDetail, getCategoryBudgetUsages, getPlanningMonthDetails, projectMonths, generateAlerts, recoveryProgress, cardUtilization, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
+import { cardInvoiceDetail, getCategoryBudgetUsages, getPlanningMonthDetails, projectMonths, generateAlerts, recoveryProgress, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
 import { formatCurrency, formatPercent, monthLabelShort, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
@@ -239,15 +239,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   };
 
   const alertIcons = {
-    critical: <AlertCircle className="text-rose-500" size={18} />,
-    warning: <AlertTriangle className="text-amber-500" size={18} />,
-    info: <Info className="text-blue-500" size={18} />,
+    critical: <AlertCircle className="text-rose-500" size={16} />,
+    warning: <AlertTriangle className="text-amber-500" size={16} />,
+    info: <Info className="text-blue-500" size={16} />,
   };
 
   const alertBg = {
-    critical: 'bg-rose-50 border-rose-200',
-    warning: 'bg-amber-50 border-amber-200',
-    info: 'bg-blue-50 border-blue-200',
+    critical: 'bg-rose-50/70',
+    warning: 'bg-amber-50/70',
+    info: 'bg-blue-50/70',
   };
 
   const alertBadgeColor = {
@@ -261,7 +261,32 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     warning: 'Atenção',
     info: 'Info',
   };
-  const topAlerts = alerts.slice(0, 3);
+  const topAlertSeverity = alerts[0]?.severity;
+  const alertStatusColor = topAlertSeverity === 'critical' ? 'red' : topAlertSeverity === 'warning' ? 'yellow' : topAlertSeverity === 'info' ? 'blue' : 'green';
+  const alertStatusLabel = alerts.length === 0 ? 'Sem alertas' : alerts.length === 1 ? '1 alerta' : `${alerts.length} alertas`;
+  const showAlertsDetail = () => {
+    openDetail(`Alertas · ${formatMonthBR(selectedMonth)}`, (
+      <div className="space-y-2">
+        {alerts.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum alerta prioritário no momento.</p>
+        ) : (
+          alerts.map((alert) => (
+            <div key={alert.id} className={`rounded-lg p-3 ${alertBg[alert.severity]}`}>
+              <div className="mb-1 flex items-center gap-2">
+                {alertIcons[alert.severity]}
+                <p className="flex-1 text-sm font-semibold text-gray-800">{alert.title}</p>
+                <Badge color={alertBadgeColor[alert.severity]}>{alertSeverityLabel[alert.severity]}</Badge>
+              </div>
+              <p className="text-sm text-gray-700">{alert.description}</p>
+              {alert.month && alert.month !== selectedMonth && (
+                <p className="mt-1 text-xs text-gray-400">{formatMonthBR(alert.month)}</p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    ));
+  };
   const topBudgetUsages = categoryBudgetUsages
     .filter((usage) => usage.status !== 'saudavel')
     .concat(categoryBudgetUsages.filter((usage) => usage.status === 'saudavel'))
@@ -275,21 +300,43 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-500">{monthLabelShort(selectedMonth)} · Visão geral financeira</p>
         </div>
-        <div className={`px-4 py-2 rounded-xl border-2 ${
-          statusColor === 'green' ? 'bg-emerald-50 border-emerald-300' :
-          statusColor === 'red' ? 'bg-rose-50 border-rose-300' :
-          statusColor === 'yellow' ? 'bg-amber-50 border-amber-300' :
-          'bg-blue-50 border-blue-300'
-        }`}>
-          <div className="flex items-center gap-2">
-            <div className={`w-2.5 h-2.5 rounded-full ${
-              statusColor === 'green' ? 'bg-emerald-500' :
-              statusColor === 'red' ? 'bg-rose-500' :
-              statusColor === 'yellow' ? 'bg-amber-500' :
-              'bg-blue-500'
-            }`} />
-            <span className="text-sm font-bold text-gray-700">{statusLabel}</span>
+        <div className="flex items-center gap-2">
+          <div className={`px-4 py-2 rounded-xl border-2 ${
+            statusColor === 'green' ? 'bg-emerald-50 border-emerald-300' :
+            statusColor === 'red' ? 'bg-rose-50 border-rose-300' :
+            statusColor === 'yellow' ? 'bg-amber-50 border-amber-300' :
+            'bg-blue-50 border-blue-300'
+          }`}>
+            <div className="flex items-center gap-2">
+              <div className={`w-2.5 h-2.5 rounded-full ${
+                statusColor === 'green' ? 'bg-emerald-500' :
+                statusColor === 'red' ? 'bg-rose-500' :
+                statusColor === 'yellow' ? 'bg-amber-500' :
+                'bg-blue-500'
+              }`} />
+              <span className="text-sm font-bold text-gray-700">{statusLabel}</span>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={showAlertsDetail}
+            className={`rounded-xl border-2 px-4 py-2 transition-colors hover:bg-white ${
+              alertStatusColor === 'green' ? 'bg-emerald-50 border-emerald-300' :
+              alertStatusColor === 'red' ? 'bg-rose-50 border-rose-300' :
+              alertStatusColor === 'yellow' ? 'bg-amber-50 border-amber-300' :
+              'bg-blue-50 border-blue-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} className={
+                alertStatusColor === 'green' ? 'text-emerald-500' :
+                alertStatusColor === 'red' ? 'text-rose-500' :
+                alertStatusColor === 'yellow' ? 'text-amber-500' :
+                'text-blue-500'
+              } />
+              <span className="text-sm font-bold text-gray-700">{alertStatusLabel}</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -303,34 +350,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         <StatCard title="Saldo projetado contas" value={formatCurrency(current.projectedAccountsBalance)} color={current.projectedAccountsBalance >= 0 ? 'green' : 'red'} icon={<Building2 size={18} />} onClick={showBankDetail} tooltip="Saldo em contas projetado para o mês, conforme o motor financeiro." />
       </div>
 
-      {/* Bloco 2: alertas prioritários */}
-      <Card className="p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <AlertCircle size={18} className="text-amber-500" />
-          <h3 className="text-sm font-semibold text-gray-700">Alertas prioritários</h3>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-          {topAlerts.length === 0 ? (
-            <div className="lg:col-span-3 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-700">Nenhum alerta prioritário no momento.</div>
-          ) : (
-            topAlerts.map((alert) => (
-              <div key={alert.id} className={`flex items-start gap-2 p-3 rounded-lg border ${alertBg[alert.severity]}`}>
-                <div className="flex-shrink-0 mt-0.5">{alertIcons[alert.severity]}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold text-gray-800">{alert.title}</p>
-                    <Badge color={alertBadgeColor[alert.severity]}>{alertSeverityLabel[alert.severity]}</Badge>
-                    {alert.month && <span className="text-xs text-gray-400">{formatMonthBR(alert.month)}</span>}
-                  </div>
-                  <p className="text-sm text-gray-700 mt-0.5">{alert.description}</p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </Card>
-
-      {/* Bloco 3: orçamento por categoria */}
+      {/* Bloco 2: orçamento por categoria */}
       {categoryBudgetUsages.length > 0 && (
         <Card className="p-4">
           <div className="flex items-center justify-between gap-2 mb-3">
@@ -365,55 +385,33 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       )}
 
       {/* Bloco 4: cartões */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-        <Card className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-700">Cartões neste mês</h3>
-            <Badge color={cardColor}>{formatPercent(cardPct)}</Badge>
-          </div>
-          <div className="flex items-baseline gap-2 mb-2">
-            <span className="text-lg font-bold text-gray-900">{formatCurrency(current.cardExpenses)}</span>
-            <span className="text-sm text-gray-400">/ {formatCurrency(cardLimit)}</span>
-          </div>
-          <ProgressBar value={current.cardExpenses} max={cardLimit} color={cardColor} />
-          <p className="text-xs text-gray-400 mt-2">
-            {cardPct > 100 ? 'Limite ultrapassado! Reduza gastos no cartão.' : cardPct >= 80 ? 'Atenção: próximo do limite.' : 'Dentro do limite.'}
-          </p>
-        </Card>
-
-        <Card className="p-4 lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
+      <Card className="p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <CreditCard size={18} className="text-blue-600" />
-              <h3 className="text-sm font-semibold text-gray-700">Resumo dos cartões · {formatMonthBR(selectedMonth)}</h3>
+              <h3 className="text-sm font-semibold text-gray-700">Cartões</h3>
             </div>
-            <button onClick={() => onNavigate('cartoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Abrir cartões</button>
+            <p className="mt-1 text-xs text-gray-400">{formatMonthBR(selectedMonth)}</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
-            <MetricItem label="Fatura atual" value={formatCurrency(current.cardExpenses)} negative={current.cardExpenses > 0} />
-            <MetricItem label="% da renda" value={formatPercent(current.income > 0 ? (current.cardExpenses / current.income) * 100 : 0)} negative={current.income > 0 && current.cardExpenses / current.income >= 0.35} />
-            <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} negative={current.parcelasFuturas > 0} />
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => onNavigate('cartoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Ver cartões</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
-            {data.cards.slice(0, 3).map((card) => {
-              const util = cardUtilization(data, card, selectedMonth);
-              return (
-                <button key={card.id} onClick={() => onNavigate('cartoes')} className="p-3 bg-gray-50 hover:bg-blue-50 rounded-lg border border-gray-100 text-left transition-colors">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: card.color }} />
-                    <span className="text-sm font-medium text-gray-700">{card.name}</span>
-                  </div>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex justify-between"><span className="text-gray-400">Fatura</span><span className="font-medium text-gray-900">{formatCurrency(util.currentInvoice)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-400">Próxima</span><span className="font-medium text-gray-700">{formatCurrency(util.nextInvoice)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-400">Futuro</span><span className="font-medium text-amber-600">{formatCurrency(util.futureInstallments)}</span></div>
-                  </div>
-                </button>
-              );
-            })}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+          <MetricItem label="Fatura do mês" value={formatCurrency(current.cardExpenses)} negative={current.cardExpenses > 0} />
+          <MetricItem label="Meta" value={formatCurrency(cardLimit)} />
+          <MetricItem label="% da renda" value={formatPercent(current.income > 0 ? (current.cardExpenses / current.income) * 100 : 0)} negative={current.income > 0 && current.cardExpenses / current.income >= 0.35} />
+          <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} negative={current.parcelasFuturas > 0} />
+        </div>
+        <div className="mt-3">
+          <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+            <span className="text-gray-400">Uso da meta mensal</span>
+            <Badge color={cardColor}>{formatPercent(cardPct)}</Badge>
           </div>
-        </Card>
-      </div>
+          <ProgressBar value={current.cardExpenses} max={cardLimit} color={cardColor} />
+        </div>
+      </Card>
 
       {/* Bloco 5: próximos meses */}
       <Card className="p-4">

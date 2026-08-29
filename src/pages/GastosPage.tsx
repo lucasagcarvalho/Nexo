@@ -141,17 +141,22 @@ export function GastosPage() {
 
   const isFormValid = () => {
     if (!form.description || form.amount <= 0) return false;
-    if (form.type === 'Prazo' && !form.endDate) return false;
-    if (form.type === 'Prazo' && form.endDate && compareMonths(form.endDate, form.startDate) < 0) return false;
+    if (form.type === 'Prazo') {
+      const effectiveStartDate = modalMode === 'edit' && form.editMode === 'future' ? form.changeMonth : form.startDate;
+      if (!form.endDate) return false;
+      if (compareMonths(form.endDate, effectiveStartDate) < 0) return false;
+    }
     if (form.type === 'Pontual' && !form.competenceDate) return false;
     return true;
   };
 
   // Auto-calculate installments for Prazo
   const prazoInstallments = useMemo(() => {
-    if (form.type !== 'Prazo' || !form.startDate || !form.endDate) return 0;
-    return countMonths(form.startDate, form.endDate);
-  }, [form.type, form.startDate, form.endDate]);
+    if (form.type !== 'Prazo' || !form.endDate) return 0;
+    const effectiveStartDate = modalMode === 'edit' && form.editMode === 'future' ? form.changeMonth : form.startDate;
+    if (!effectiveStartDate || compareMonths(form.endDate, effectiveStartDate) < 0) return 0;
+    return countMonths(effectiveStartDate, form.endDate);
+  }, [form.type, form.startDate, form.endDate, form.changeMonth, form.editMode, modalMode]);
 
   const save = () => {
     if (!isFormValid()) return;
@@ -211,7 +216,7 @@ export function GastosPage() {
             realizedAmount: form.status === 'realizado' ? form.realizedAmount : null,
           });
         } else {
-          const newVigencias = applyVigenciaChange(editing.vigencias, form.changeMonth, form.amount);
+          const newVigencias = applyVigenciaChange(editing.vigencias, form.changeMonth, form.amount, form.type === 'Prazo' ? form.endDate : null);
           updateExpense(editing.id, {
             description: form.description, category: form.category,
             paymentMethod: form.paymentMethod, dueDay: form.dueDay, note: form.note || undefined,
@@ -550,17 +555,21 @@ export function GastosPage() {
             {form.type === 'Prazo' && (
               <>
                 <Input label="Dia de vencimento" type="number" value={form.dueDay} onChange={(v) => setForm({ ...form, dueDay: parseInt(v) || 1 })} />
-                <div className="grid grid-cols-2 gap-3">
-                  <MonthPicker label="Mês de início" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} required />
+                {modalMode === 'edit' && form.editMode === 'future' ? (
                   <MonthPicker label="Mês de término" value={form.endDate} onChange={(v) => setForm({ ...form, endDate: v })} required />
-                </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <MonthPicker label="Mês de início" value={form.startDate} onChange={(v) => setForm({ ...form, startDate: v })} required />
+                    <MonthPicker label="Mês de término" value={form.endDate} onChange={(v) => setForm({ ...form, endDate: v })} required />
+                  </div>
+                )}
                 {prazoInstallments > 0 && (
                   <div className="p-3 bg-purple-50 rounded-lg">
                     <p className="text-sm text-purple-700">
                       Total de parcelas: <strong>{prazoInstallments}x</strong> de {formatCurrency(form.amount)}
                     </p>
                     <p className="text-xs text-purple-500 mt-0.5">
-                      Período: {formatMonthBR(form.startDate)} a {formatMonthBR(form.endDate)}
+                      Período: {formatMonthBR(modalMode === 'edit' && form.editMode === 'future' ? form.changeMonth : form.startDate)} a {formatMonthBR(form.endDate)}
                     </p>
                   </div>
                 )}
