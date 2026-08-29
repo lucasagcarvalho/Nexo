@@ -1,12 +1,12 @@
 import { useState, type ReactNode } from 'react';
-import { LayoutDashboard, Eye, TrendingUp, Wallet, CreditCard, Landmark, BarChart3, CalendarDays, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, Building2, ChevronLeftCircle, ChevronRightCircle, AlertCircle, XCircle } from 'lucide-react';
+import { LayoutDashboard, Eye, TrendingUp, Wallet, CreditCard, Landmark, BarChart3, CalendarDays, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, Building2, ChevronLeftCircle, ChevronRightCircle, AlertCircle, XCircle, Activity } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { monthLabel } from '@/lib/format';
 import { Tooltip } from '@/components/ui';
 
-export type PageId = 'dashboard' | 'visao-geral' | 'receitas' | 'gastos' | 'cartoes' | 'contas' | 'dividas' | 'projecao' | 'planejamento' | 'configuracoes';
+export type PageId = 'dashboard' | 'visao-geral' | 'receitas' | 'gastos' | 'cartoes' | 'contas' | 'dividas' | 'projecao' | 'analise' | 'planejamento' | 'configuracoes';
 
 interface LayoutProps {
   current: PageId;
@@ -23,6 +23,7 @@ const MENU_ITEMS: { id: PageId; label: string; icon: typeof LayoutDashboard }[] 
   { id: 'contas', label: 'Contas', icon: Building2 },
   { id: 'dividas', label: 'Dívidas', icon: Landmark },
   { id: 'projecao', label: 'Projeção', icon: BarChart3 },
+  { id: 'analise', label: 'Análise', icon: Activity },
   { id: 'planejamento', label: 'Planejamento', icon: CalendarDays },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];

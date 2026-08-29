@@ -631,7 +631,7 @@ Testes:
 
 ## ETAPA 06 — Reduzir saúde financeira na Home
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P1
 
 ### Problema
@@ -679,33 +679,43 @@ Sua reserva ainda não cobre um mês essencial.
 
 ### Critérios de aceite
 
-- [ ] Máximo de 3 indicadores na Home.
-- [ ] Fórmulas não aparecem diretamente na Home.
-- [ ] Cada indicador possui explicação curta.
-- [ ] Indicadores completos continuam acessíveis em tela própria ou detalhe.
-- [ ] Comprometimento de cartões não fica duplicado se já aparece no bloco Cartões.
+- [x] Máximo de 3 indicadores na Home.
+- [x] Fórmulas não aparecem diretamente na Home.
+- [x] Cada indicador possui explicação curta.
+- [x] Indicadores completos continuam acessíveis em tela própria ou detalhe.
+- [x] Comprometimento de cartões não fica duplicado se já aparece no bloco Cartões.
 
 ### Notas de implementação
 
 ```text
 Indicadores mantidos:
--
+- Taxa de poupança.
+- Comprometimento fixo.
+- Cobertura da reserva.
 
 Indicadores movidos:
--
+- Comprometimento de cartões saiu da Home para evitar duplicação com o bloco Cartões.
+- Variação de gastos saiu da Home e fica reservada para detalhe/análise.
 
 Textos:
--
+- A Home mostra apenas nome, valor, status e explicação curta de cada indicador.
+- Fórmula e faixa de leitura foram removidas do card principal e ficam disponíveis em modal ao clicar no indicador.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
 
 ## ETAPA 07 — Criar página "Análise financeira"
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P1
 
 ### Objetivo
@@ -753,35 +763,77 @@ Ela não precisa ter a mesma restrição de densidade da Home.
 
 ### Critérios de aceite
 
-- [ ] Página de análise criada.
-- [ ] Informações removidas da Home continuam acessíveis.
-- [ ] A página usa apenas dados do motor financeiro.
-- [ ] Navegação principal permite chegar à Análise.
-- [ ] Nenhuma regra financeira é duplicada.
+- [x] Página de análise criada.
+- [x] Informações removidas da Home continuam acessíveis.
+- [x] A página usa apenas dados do motor financeiro.
+- [x] Navegação principal permite chegar à Análise.
+- [x] Nenhuma regra financeira é duplicada.
 
 ### Notas de implementação
 
 ```text
 Rota:
--
+- Página interna `analise`, acessível pelo menu lateral como "Análise".
 
 Seções:
--
+- Saúde financeira completa.
+- Comparações com mês anterior, média de 3 meses e média de 6 meses.
+- Distribuição de gastos por categoria.
+- Distribuição de gastos por tipo.
+- Distribuição de gastos por classe.
+- Tendência de categorias contra média de 3 meses.
 
 Dados reutilizados:
--
+- `projectMonths(data, 24, selectedMonth)`.
+- `getFinancialHealthIndicators(data, projection)`.
+- `getMonthlyComparisonSummary(data, selectedMonth)`.
+- Campos de distribuição já calculados em `MonthProjection`.
 
 Arquivos:
--
+- src/pages/AnalisePage.tsx
+- src/App.tsx
+- src/components/Layout.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
 
 # FASE 4 — GRÁFICOS
 
+## Regra global para gráficos temporais
+
+Todo gráfico com eixo, legenda ou rótulo mensal deve exibir **mês e ano curto**.
+
+Formato esperado:
+
+```text
+Dez/26
+Jan/27
+Fev/27
+```
+
+Não usar apenas:
+
+```text
+Dez
+Jan
+Fev
+```
+
+Motivo:
+
+- evitar ambiguidade em viradas de ano;
+- facilitar leitura de projeções longas;
+- manter consistência entre Dashboard, Projeção, Análise e demais telas.
+
 ## ETAPA 08 — Reduzir gráficos da Home
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P1
 
 ### Problema
@@ -819,25 +871,36 @@ Mostrar:
 
 ### Critérios de aceite
 
-- [ ] Home exibe no máximo 1 gráfico grande.
-- [ ] Gráfico escolhido ajuda decisão futura.
-- [ ] Outros gráficos continuam disponíveis em páginas apropriadas.
-- [ ] Nenhum dado deixa de existir no sistema.
+- [x] Home exibe no máximo 1 gráfico grande.
+- [x] Gráfico escolhido ajuda decisão futura.
+- [x] Outros gráficos continuam disponíveis em páginas apropriadas.
+- [x] Nenhum dado deixa de existir no sistema.
 
 ### Notas de implementação
 
 ```text
 Gráfico mantido:
--
+- Fluxo financeiro dos próximos meses, com receitas, despesas e saldo.
+- Eixo mensal ajustado para usar mês e ano curto, seguindo o padrão global de gráficos temporais.
 
 Gráficos movidos:
--
+- Evolução do saldo removida da Home.
+- Donut/lista gráfica de gastos por categoria removida da Home.
+- Gráfico de gastos por tipo removido da Home.
+- Gráfico de parcelas futuras vs renda removido da Home.
 
 Destino:
--
+- Distribuições e comparações ficam na página Análise.
+- Informações futuras detalhadas ficam na página Projeção.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1677,6 +1740,9 @@ Adicionar uma linha sempre que uma etapa for concluída.
 | 2026-08-29 | Etapa 03 — Compactar Alertas Prioritários | Concluído | Alertas da Home foram movidos para um botão compacto ao lado do status financeiro, mantendo ordenação por severidade e descrições completas em modal. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 04 — Simplificar bloco de Cartões na Home | Concluído | Home passou a ter um único bloco compacto de cartões com fatura do mês, meta, percentual da renda, parcelas futuras e CTA para a página de Cartões. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 05 — Simplificar "Próximos meses" | Concluído | Cards de 3, 6 e 12 meses foram substituídos por um único resumo de 12 meses com meses negativos, menor saldo previsto, maior comprometimento e CTA para Projeção. | src/pages/DashboardPage.tsx |
+| 2026-08-29 | Etapa 06 — Reduzir saúde financeira na Home | Concluído | Home passou a mostrar apenas taxa de poupança, comprometimento fixo e cobertura da reserva, com fórmula e faixas disponíveis somente em detalhe. | src/pages/DashboardPage.tsx |
+| 2026-08-29 | Etapa 07 — Criar página "Análise financeira" | Concluído | Página Análise criada com saúde financeira completa, comparações, distribuição de gastos e acesso pelo menu principal usando dados do motor financeiro. | src/pages/AnalisePage.tsx, src/App.tsx, src/components/Layout.tsx |
+| 2026-08-29 | Etapa 08 — Reduzir gráficos da Home | Concluído | Home passou a exibir apenas o gráfico de fluxo financeiro dos próximos meses; demais gráficos foram removidos da Home e mantidos como análise/detalhe em páginas específicas. | src/pages/DashboardPage.tsx |
 
 ---
 

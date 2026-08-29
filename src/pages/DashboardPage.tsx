@@ -1,15 +1,13 @@
 import { useMemo, useState } from 'react';
 import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, CheckCircle2, Info, AlertTriangle, LineChart as LineChartIcon, Building2, Banknote, ReceiptText } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Area, AreaChart } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { cardInvoiceDetail, getCategoryBudgetUsages, getPlanningMonthDetails, projectMonths, generateAlerts, recoveryProgress, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
-import { formatCurrency, formatPercent, monthLabelShort, monthShort, formatMonthBR } from '@/lib/format';
+import { formatCurrency, formatPercent, monthLabelShort, formatMonthBR } from '@/lib/format';
 import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
 import type { FinancialHealthIndicator } from '@/lib/projection';
-
-const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#6B7280'];
 
 export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void }) {
   const { data, isInvoicePaid } = useData();
@@ -40,21 +38,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   else if (balancePct < 15) { statusLabel = 'Recuperação'; statusColor = 'blue'; }
 
   const flowData = projection.months.slice(0, 12).map((m) => ({
-    month: monthShort(m.monthKey),
+    month: monthLabelShort(m.monthKey),
     Receitas: Math.round(m.income),
     Despesas: Math.round(m.totalExpenses),
     Saldo: Math.round(m.balance),
   }));
 
-  const balanceData = projection.months.slice(0, 12).map((m) => ({
-    month: monthShort(m.monthKey),
-    Saldo: Math.round(m.balance),
-    Acumulado: Math.round(m.accumulatedBalance),
-  }));
-
-  const categoryData = Object.entries(current.categoryBreakdown)
-    .map(([name, value]) => ({ name, value: Math.round(value) }))
-    .sort((a, b) => b.value - a.value);
   const budgetStatusLabel = {
     saudavel: 'Saudável',
     atencao: 'Atenção',
@@ -65,26 +54,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     atencao: 'yellow',
     excedido: 'red',
   } as const;
-
-  // Group small categories into "Outros" (threshold: 5% of total)
-  const totalCat = categoryData.reduce((s, c) => s + c.value, 0);
-  const THRESHOLD = totalCat * 0.05;
-  const bigCats = categoryData.filter((c) => c.value >= THRESHOLD);
-  const smallCats = categoryData.filter((c) => c.value < THRESHOLD);
-  const outrosValue = smallCats.reduce((s, c) => s + c.value, 0);
-  const pieData = outrosValue > 0 ? [...bigCats, { name: 'Outros', value: outrosValue }] : bigCats;
-
-  const typeData = [
-    { name: 'Fixos', value: Math.round(current.fixedExpenses), color: '#3B82F6' },
-    { name: 'Prazo', value: Math.round(current.prazoExpenses), color: '#8B5CF6' },
-    { name: 'Pontuais', value: Math.round(current.variableExpenses), color: '#F59E0B' },
-  ].filter((t) => t.value > 0);
-
-  const parcelasData = projection.months.slice(0, 12).map((m) => ({
-    month: monthShort(m.monthKey),
-    Parcelas: Math.round(m.cardInstallments),
-    Renda: Math.round(m.income),
-  }));
 
   const showBankDetail = () => {
     const projectedFlow = current.projectedAccountsBalance - bankBalance;
@@ -292,6 +261,11 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     .concat(categoryBudgetUsages.filter((usage) => usage.status === 'saudavel'))
     .slice(0, 6);
   const futureSummary = horizonSummaries.find((summary) => summary.months === 12) ?? horizonSummaries[horizonSummaries.length - 1];
+  const homeHealthIndicators = healthIndicators.filter((indicator) => (
+    indicator.id === 'savings-rate'
+    || indicator.id === 'fixed-commitment'
+    || indicator.id === 'reserve-coverage'
+  ));
 
   return (
     <div className="space-y-3">
@@ -451,13 +425,19 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <LineChartIcon size={16} className="text-blue-600" />
-            <h3 className="text-sm font-semibold text-gray-700">Saúde financeira explicável</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Saúde financeira</h3>
           </div>
           <Badge color="blue">{formatMonthBR(selectedMonth)}</Badge>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-          {healthIndicators.map((indicator) => (
-            <HealthIndicatorCard key={indicator.id} indicator={indicator} />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {homeHealthIndicators.map((indicator) => (
+            <HealthIndicatorCard
+              key={indicator.id}
+              indicator={indicator}
+              onClick={() => openDetail(`Saúde financeira · ${indicator.label}`, (
+                <HealthIndicatorDetail indicator={indicator} />
+              ))}
+            />
           ))}
         </div>
       </Card>
@@ -469,124 +449,21 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         <ExpenseClassCard title="Outros" value={current.otherExpenses} income={current.income} colorClass="text-gray-700" />
       </div>
 
-      {/* Charts row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Fluxo Financeiro · 12 meses a partir de {formatMonthBR(selectedMonth)}</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={flowData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-              <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="Receitas" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Despesas" stroke="#EF4444" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Saldo" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
-
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Evolução do Saldo</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={balanceData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-              <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Area type="monotone" dataKey="Saldo" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.15} strokeWidth={2} />
-              <Area type="monotone" dataKey="Acumulado" stroke="#8B5CF6" fill="#8B5CF6" fillOpacity={0.1} strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
-
-      {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Gastos por Categoria · {formatMonthBR(selectedMonth)}</h3>
-          {categoryData.length === 0 ? (
-            <div className="flex items-center justify-center h-[260px] text-sm text-gray-400">Nenhum gasto em {formatMonthBR(selectedMonth)}.</div>
-          ) : (
-            <div className="flex flex-col lg:flex-row gap-2">
-              <ResponsiveContainer width="100%" height={260} className="flex-1">
-                <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={40} label={(e: { name: string }) => e.name} labelLine={{ stroke: '#D1D5DB' }}>
-                    {pieData.map((_, i) => (<Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex-1 space-y-1.5 max-h-[260px] overflow-y-auto">
-                {categoryData.map((cat, i) => {
-                  const pct = totalCat > 0 ? (cat.value / totalCat) * 100 : 0;
-                  return (
-                    <button key={cat.name} type="button" onClick={() => showCategoryDetail(cat.name)} className="flex w-full items-center justify-between text-left text-sm hover:bg-blue-50 rounded-md px-1 py-0.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                        <span className="text-gray-600 truncate">{cat.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="font-medium text-gray-900">{formatCurrency(cat.value)}</span>
-                        <span className="text-xs text-gray-400 w-10 text-right">{pct.toFixed(0)}%</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </Card>
-
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Gastos por Tipo · {formatMonthBR(selectedMonth)}</h3>
-          {typeData.length === 0 ? (
-            <div className="flex items-center justify-center h-[260px] text-sm text-gray-400">Nenhum gasto em {formatMonthBR(selectedMonth)}.</div>
-          ) : (
-            <div className="space-y-4">
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={typeData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                  <XAxis type="number" tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} stroke="#9CA3AF" width={70} />
-                  <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {typeData.map((t, i) => (<Cell key={i} fill={t.color} />))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
-                {typeData.map((t) => (
-                  <div key={t.name} className="p-2 bg-gray-50 rounded-lg border border-gray-100 text-center">
-                    <p className="text-xs text-gray-400">{t.name}</p>
-                    <p className="text-sm font-bold" style={{ color: t.color }}>{formatCurrency(t.value)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Charts row 3 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Parcelas Futuras vs Renda</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={parcelasData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-              <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="Renda" fill="#E5E7EB" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Parcelas" fill="#F59E0B" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
+      <Card className="p-4">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Fluxo financeiro dos próximos meses</h3>
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart data={flowData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
+            <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+            <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line type="monotone" dataKey="Receitas" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="Despesas" stroke="#EF4444" strokeWidth={2} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="Saldo" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </Card>
 
       <Card className="p-4">
         <div className="flex items-center gap-2 mb-2">
@@ -702,7 +579,7 @@ function DetailRow({ label, amount, colorClass, strong = false }: { label: strin
   );
 }
 
-function HealthIndicatorCard({ indicator }: { indicator: FinancialHealthIndicator }) {
+function HealthIndicatorCard({ indicator, onClick }: { indicator: FinancialHealthIndicator; onClick: () => void }) {
   const statusLabel = {
     bom: 'Bom',
     atencao: 'Atenção',
@@ -722,7 +599,7 @@ function HealthIndicatorCard({ indicator }: { indicator: FinancialHealthIndicato
       : formatPercent(indicator.value);
 
   return (
-    <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+    <button type="button" onClick={onClick} className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-left transition-colors hover:bg-blue-50">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-medium text-gray-500">{indicator.label}</p>
@@ -731,9 +608,48 @@ function HealthIndicatorCard({ indicator }: { indicator: FinancialHealthIndicato
         <Badge color={statusColor[indicator.status]}>{statusLabel[indicator.status]}</Badge>
       </div>
       <p className="text-xs text-gray-600 mt-2">{indicator.explanation}</p>
-      <div className="mt-2 space-y-1 border-t border-gray-200 pt-2">
-        <p className="text-[11px] text-gray-400">Fórmula: {indicator.formula}</p>
-        <p className="text-[11px] text-gray-400">{indicator.range}</p>
+    </button>
+  );
+}
+
+function HealthIndicatorDetail({ indicator }: { indicator: FinancialHealthIndicator }) {
+  const statusLabel = {
+    bom: 'Bom',
+    atencao: 'Atenção',
+    critico: 'Crítico',
+    neutro: 'Sem dados',
+  };
+  const statusColor = {
+    bom: 'green',
+    atencao: 'yellow',
+    critico: 'red',
+    neutro: 'gray',
+  } as const;
+  const valueText = indicator.value === null
+    ? 'Sem dados'
+    : indicator.unit === 'months'
+      ? `${indicator.value.toFixed(1).replace('.', ',')} meses`
+      : formatPercent(indicator.value);
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg bg-gray-50 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-medium text-gray-600">{indicator.label}</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{valueText}</p>
+          </div>
+          <Badge color={statusColor[indicator.status]}>{statusLabel[indicator.status]}</Badge>
+        </div>
+        <p className="mt-2 text-sm text-gray-700">{indicator.explanation}</p>
+      </div>
+      <div className="rounded-lg bg-blue-50 p-3">
+        <p className="text-xs font-medium text-blue-700">Fórmula</p>
+        <p className="mt-1 text-sm text-blue-900">{indicator.formula}</p>
+      </div>
+      <div className="rounded-lg bg-gray-50 p-3">
+        <p className="text-xs font-medium text-gray-500">Faixa de leitura</p>
+        <p className="mt-1 text-sm text-gray-700">{indicator.range}</p>
       </div>
     </div>
   );

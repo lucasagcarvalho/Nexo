@@ -12,6 +12,7 @@ import { CartoesPage } from '@/pages/CartoesPage';
 import { ContasPage } from '@/pages/ContasPage';
 import { DividasPage } from '@/pages/DividasPage';
 import { ProjecaoPage } from '@/pages/ProjecaoPage';
+import { AnalisePage } from '@/pages/AnalisePage';
 import { PlanejamentoPage } from '@/pages/PlanejamentoPage';
 import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
 
@@ -43,6 +44,7 @@ function AppContent() {
           {page === 'contas' && <ContasPage />}
           {page === 'dividas' && <DividasPage />}
           {page === 'projecao' && <ProjecaoPage />}
+          {page === 'analise' && <AnalisePage />}
           {page === 'planejamento' && <PlanejamentoPage />}
           {page === 'configuracoes' && <ConfiguracoesPage />}
         </Layout>
