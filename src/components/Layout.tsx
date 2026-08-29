@@ -60,7 +60,7 @@ export function Layout({ current, onNavigate, children }: LayoutProps) {
       <button
         onClick={toggleCollapsed}
         aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
-        className={`hidden md:flex items-center justify-center absolute top-20 z-40 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-blue-600 hover:border-blue-300 transition-all duration-200 ${collapsed ? 'left-12' : 'left-56'}`}
+        className={`hidden md:flex items-center justify-center fixed top-20 z-40 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-blue-600 hover:border-blue-300 transition-all duration-200 ${collapsed ? 'left-12' : 'left-56'}`}
         style={{ transform: 'translateX(-50%)' }}
       >
         {collapsed ? <ChevronRightCircle size={16} /> : <ChevronLeftCircle size={16} />}

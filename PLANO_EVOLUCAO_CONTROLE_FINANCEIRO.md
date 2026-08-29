@@ -907,7 +907,7 @@ Testes:
 
 ## ETAPA 09 — Substituir donut de categorias por ranking simples
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -938,26 +938,35 @@ Opcional:
 
 ### Critérios de aceite
 
-- [ ] Top 5 categorias entendível sem legenda.
-- [ ] Valor e percentual aparecem juntos.
-- [ ] Clique em categoria abre drill-down.
-- [ ] Ranking usa o mesmo detalhamento financeiro já existente.
-- [ ] Demais categorias acessíveis em "Ver todos".
+- [x] Top 5 categorias entendível sem legenda.
+- [x] Valor e percentual aparecem juntos.
+- [x] Clique em categoria abre drill-down.
+- [x] Ranking usa o mesmo detalhamento financeiro já existente.
+- [x] Demais categorias acessíveis em "Ver todos".
 
 ### Notas de implementação
 
 ```text
 UI adotada:
--
+- Bloco "Onde você mais gastou" em ranking simples, sem donut e sem legenda separada.
+- Cada linha mostra posição, categoria, valor, percentual e barra horizontal curta.
 
 Quantidade:
--
+- Home mostra Top 5 categorias por valor em `current.categoryBreakdown`.
+- O botão "Ver todos" aparece quando há mais de 5 categorias.
 
 Drill-down:
--
+- Clique em qualquer categoria abre o detalhe já existente de lançamentos da categoria.
+- "Ver todos" abre modal com ranking completo e mantém o mesmo comportamento de clique por categoria.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -966,7 +975,7 @@ Arquivos:
 
 ## ETAPA 10 — Reorganizar ordem final do Dashboard
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Objetivo
@@ -1020,26 +1029,42 @@ Gráfico de fluxo financeiro.
 
 ### Critérios de aceite
 
-- [ ] Informações mais importantes aparecem primeiro.
-- [ ] Não existem dois blocos respondendo a mesma pergunta.
-- [ ] A primeira dobra do desktop não fica saturada.
-- [ ] Usuário entende o estado do mês sem precisar rolar muito.
-- [ ] Layout mantém boa leitura em telas menores.
+- [x] Informações mais importantes aparecem primeiro.
+- [x] Não existem dois blocos respondendo a mesma pergunta.
+- [x] A primeira dobra do desktop não fica saturada.
+- [x] Usuário entende o estado do mês sem precisar rolar muito.
+- [x] Layout mantém boa leitura em telas menores.
 
 ### Notas de implementação
 
 ```text
 Layout final:
--
+- Header com status financeiro e botão de alertas.
+- Linha 1: 4 cards principais — Entradas, Saídas, A pagar e Saldo do mês.
+- Linha 2: Cartões e Próximos meses em duas colunas no desktop.
+- Linha 3: Onde você mais gastou e Saúde financeira em duas colunas no desktop.
+- Linha 4: gráfico principal de fluxo financeiro.
 
 Mudanças:
--
+- Topo do Dashboard voltou a ter apenas 4 cards principais.
+- "Despesas previstas" virou contexto dentro de Saídas.
+- "Saldo em contas" virou contexto dentro de Saldo do mês.
+- Orçamento por categoria saiu da Home para reduzir repetição e ruído.
+- Checklist de recuperação saiu da Home por não fazer parte da hierarquia final.
 
 Blocos reposicionados:
--
+- Cartões e Próximos meses foram agrupados na mesma linha.
+- Ranking de categorias e Saúde financeira foram agrupados na mesma linha.
+- Gráfico principal ficou após os blocos de decisão.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1048,7 +1073,7 @@ Arquivos:
 
 ## ETAPA 11 — Criar textos contextuais curtos
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -1095,22 +1120,34 @@ Texto secundário:
 
 ### Critérios de aceite
 
-- [ ] Indicadores principais possuem contexto curto.
-- [ ] Nenhum card exige leitura de parágrafo.
-- [ ] Fórmulas ficam em detalhe/tooltip.
-- [ ] Textos são consistentes.
+- [x] Indicadores principais possuem contexto curto.
+- [x] Nenhum card exige leitura de parágrafo.
+- [x] Fórmulas ficam em detalhe/tooltip.
+- [x] Textos são consistentes.
 
 ### Notas de implementação
 
 ```text
 Textos criados:
--
+- Entradas: informa que o valor é base para cobrir as saídas do mês.
+- Saídas: informa se as saídas cabem ou passam das entradas atuais.
+- A pagar: informa percentual pendente e se ainda precisa de atenção.
+- Saldo do mês: informa se há folga prevista ou risco de fechar negativo.
+- Cartões: fatura, meta, peso na renda e parcelas futuras ganharam frase curta.
+- Próximos meses: meses negativos, menor saldo e maior comprometimento ganharam frase curta.
 
 Componentes:
--
+- `StatCard` passou a usar subtítulos mais explicativos nos cards principais da Home.
+- `MetricItem` recebeu `description` opcional para contexto curto em blocos compactos.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1743,6 +1780,9 @@ Adicionar uma linha sempre que uma etapa for concluída.
 | 2026-08-29 | Etapa 06 — Reduzir saúde financeira na Home | Concluído | Home passou a mostrar apenas taxa de poupança, comprometimento fixo e cobertura da reserva, com fórmula e faixas disponíveis somente em detalhe. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 07 — Criar página "Análise financeira" | Concluído | Página Análise criada com saúde financeira completa, comparações, distribuição de gastos e acesso pelo menu principal usando dados do motor financeiro. | src/pages/AnalisePage.tsx, src/App.tsx, src/components/Layout.tsx |
 | 2026-08-29 | Etapa 08 — Reduzir gráficos da Home | Concluído | Home passou a exibir apenas o gráfico de fluxo financeiro dos próximos meses; demais gráficos foram removidos da Home e mantidos como análise/detalhe em páginas específicas. | src/pages/DashboardPage.tsx |
+| 2026-08-29 | Etapa 09 — Substituir donut de categorias por ranking simples | Concluído | Home ganhou ranking Top 5 de categorias com valor, percentual, barras horizontais, drill-down por categoria e modal "Ver todos". | src/pages/DashboardPage.tsx |
+| 2026-08-29 | Etapa 10 — Reorganizar ordem final do Dashboard | Concluído | Dashboard reorganizado na hierarquia final com resumo do mês, alertas no topo, Cartões + Próximos meses, ranking + saúde financeira e gráfico principal. | src/pages/DashboardPage.tsx |
+| 2026-08-29 | Etapa 11 — Criar textos contextuais curtos | Concluído | Cards principais, Cartões e Próximos meses receberam frases curtas de contexto sem expor fórmulas na Home. | src/pages/DashboardPage.tsx |
 
 ---
 

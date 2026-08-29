@@ -578,6 +578,9 @@ export function Tooltip({ text, children, side = 'top', className = '' }: Toolti
         else if (side === 'bottom') top = rect.bottom + gap;
         else if (side === 'left') { top = rect.top + rect.height / 2; left = rect.left - gap; }
         else if (side === 'right') { top = rect.top + rect.height / 2; left = rect.right + gap; }
+        if (side === 'top' || side === 'bottom') {
+          left = Math.min(Math.max(left, 136), window.innerWidth - 136);
+        }
         setCoords({ top, left });
       }
       setShow(true);
@@ -597,7 +600,7 @@ export function Tooltip({ text, children, side = 'top', className = '' }: Toolti
       </div>
       {show && text && typeof document !== 'undefined' && document.body && createPortal(
         <div
-          className={`fixed z-[9999] ${translateClass} px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap pointer-events-none shadow-lg max-w-xs`}
+          className={`fixed z-[9999] ${translateClass} max-w-[min(17rem,calc(100vw-2rem))] px-2.5 py-1.5 bg-gray-900 text-white text-xs leading-snug rounded-lg whitespace-normal break-words pointer-events-none shadow-lg`}
           style={{ top: `${coords.top}px`, left: `${coords.left}px` }}
         >
           {text}

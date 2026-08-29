@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, CheckCircle2, Info, AlertTriangle, LineChart as LineChartIcon, Building2, Banknote, ReceiptText } from 'lucide-react';
+import { TrendingUp, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, Info, AlertTriangle, LineChart as LineChartIcon, Banknote, ReceiptText } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { cardInvoiceDetail, getCategoryBudgetUsages, getPlanningMonthDetails, projectMonths, generateAlerts, recoveryProgress, totalBankBalance, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
+import { cardInvoiceDetail, getPlanningMonthDetails, projectMonths, generateAlerts, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
 import { formatCurrency, formatPercent, monthLabelShort, formatMonthBR } from '@/lib/format';
 import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
@@ -16,13 +16,10 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
   const projection = useMemo(() => projectMonths(data, 24, selectedMonth), [data, selectedMonth]);
   const alerts = useMemo(() => generateAlerts(data, projection), [data, projection]);
-  const recovery = useMemo(() => recoveryProgress(data, projection), [data, projection]);
   const healthIndicators = useMemo(() => getFinancialHealthIndicators(data, projection), [data, projection]);
   const horizonSummaries = useMemo(() => getProjectionHorizonSummaries(data, projection), [data, projection]);
   const planning = useMemo(() => getPlanningMonthDetails(data, selectedMonth), [data, selectedMonth]);
   const current = projection.months[0];
-  const bankBalance = totalBankBalance(data);
-  const categoryBudgetUsages = useMemo(() => getCategoryBudgetUsages(data, selectedMonth), [data, selectedMonth]);
 
   if (!current) return null;
 
@@ -36,6 +33,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   if (current.balance < 0) { statusLabel = 'Crítico'; statusColor = 'red'; }
   else if (balancePct < 5) { statusLabel = 'Atenção'; statusColor = 'yellow'; }
   else if (balancePct < 15) { statusLabel = 'Recuperação'; statusColor = 'blue'; }
+  const unpaidPercent = current.realizedExpenses > 0 ? (current.unpaidExpenses / current.realizedExpenses) * 100 : 0;
+  const cardIncomePercent = current.income > 0 ? (current.cardExpenses / current.income) * 100 : 0;
+  const incomeContext = current.income > 0 ? 'Base para cobrir as saídas do mês.' : 'Sem entradas previstas neste mês.';
+  const expenseContext = current.balance >= 0 ? 'As saídas cabem nas entradas atuais.' : 'As saídas passam das entradas.';
+  const unpaidContext = current.unpaidExpenses > 0 ? 'Ainda precisa de atenção no mês.' : 'Não há pendências nas saídas.';
+  const balanceContext = current.balance >= 0 ? 'Há folga prevista neste mês.' : 'O mês pode fechar no negativo.';
 
   const flowData = projection.months.slice(0, 12).map((m) => ({
     month: monthLabelShort(m.monthKey),
@@ -43,47 +46,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     Despesas: Math.round(m.totalExpenses),
     Saldo: Math.round(m.balance),
   }));
-
-  const budgetStatusLabel = {
-    saudavel: 'Saudável',
-    atencao: 'Atenção',
-    excedido: 'Excedido',
-  };
-  const budgetStatusColor = {
-    saudavel: 'green',
-    atencao: 'yellow',
-    excedido: 'red',
-  } as const;
-
-  const showBankDetail = () => {
-    const projectedFlow = current.projectedAccountsBalance - bankBalance;
-    setDetailModal({
-      title: `Saldo projetado nas contas · ${formatMonthBR(selectedMonth)}`,
-      content: (
-        <div className="space-y-3">
-          {data.bankAccounts.map((acc) => (
-            <div key={acc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div>
-                <span className="text-sm font-medium text-gray-700">{acc.name}</span>
-                <span className="text-xs text-gray-400 ml-2">{acc.bank}</span>
-              </div>
-              <span className={`text-sm font-bold ${acc.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(acc.balance)}</span>
-            </div>
-          ))}
-          {projectedFlow !== 0 && (
-            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-              <span className="text-sm font-medium text-blue-700">Fluxo projetado até o mês</span>
-              <span className={`text-sm font-bold ${projectedFlow >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{formatCurrency(projectedFlow)}</span>
-            </div>
-          )}
-          <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
-            <span className="text-sm font-medium text-emerald-700">Saldo projetado nas contas</span>
-            <span className={`text-sm font-bold ${current.projectedAccountsBalance >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>{formatCurrency(current.projectedAccountsBalance)}</span>
-          </div>
-        </div>
-      ),
-    });
-  };
 
   const openDetail = (title: string, content: React.ReactNode) => {
     setDetailModal({ title, content });
@@ -256,16 +218,37 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       </div>
     ));
   };
-  const topBudgetUsages = categoryBudgetUsages
-    .filter((usage) => usage.status !== 'saudavel')
-    .concat(categoryBudgetUsages.filter((usage) => usage.status === 'saudavel'))
-    .slice(0, 6);
   const futureSummary = horizonSummaries.find((summary) => summary.months === 12) ?? horizonSummaries[horizonSummaries.length - 1];
   const homeHealthIndicators = healthIndicators.filter((indicator) => (
     indicator.id === 'savings-rate'
     || indicator.id === 'fixed-commitment'
     || indicator.id === 'reserve-coverage'
   ));
+  const categoryRanking = Object.entries(current.categoryBreakdown)
+    .map(([category, value]) => ({ category, value }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const topCategoryRanking = categoryRanking.slice(0, 5);
+  const categoryRankingTotal = categoryRanking.reduce((sum, item) => sum + item.value, 0);
+  const showAllCategoriesDetail = () => {
+    openDetail(`Onde você mais gastou · ${formatMonthBR(selectedMonth)}`, (
+      <div className="space-y-2">
+        {categoryRanking.length === 0 ? (
+          <p className="text-sm text-gray-400">Nenhum gasto encontrado neste mês.</p>
+        ) : (
+          categoryRanking.map((item, index) => (
+            <CategoryRankingRow
+              key={item.category}
+              item={item}
+              index={index}
+              total={categoryRankingTotal}
+              onClick={() => showCategoryDetail(item.category)}
+            />
+          ))
+        )}
+      </div>
+    ));
+  };
 
   return (
     <div className="space-y-3">
@@ -316,137 +299,130 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       </div>
 
       {/* Bloco 1: resumo do mês */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-1">
-        <StatCard title="Receita prevista" value={formatCurrency(current.income)} color="green" icon={<TrendingUp size={18} />} onClick={showIncomeDetail} tooltip="Soma das receitas fixas e variáveis deste mês. Clique para ver os lançamentos." />
-        <StatCard title="Despesas previstas" value={formatCurrency(current.expectedExpenses)} color="red" icon={<TrendingDown size={18} />} onClick={() => showExpensesDetail('Despesas previstas', 'expected')} tooltip="Valor previsto para gastos fixos, pontuais, cartões e dívidas deste mês. Clique para ver a composição." />
-        <StatCard title="Despesas realizadas" value={formatCurrency(current.realizedExpenses)} color="red" icon={<ReceiptText size={18} />} onClick={() => showExpensesDetail('Despesas realizadas', 'realized')} tooltip="Valor efetivo do mês, usando valor realizado quando informado. Clique para ver os lançamentos." />
-        <StatCard title="Ainda a pagar" value={formatCurrency(current.unpaidExpenses)} color={current.unpaidExpenses > 0 ? 'yellow' : 'green'} icon={<Banknote size={18} />} onClick={() => showExpensesDetail('Ainda a pagar', 'unpaid')} tooltip="Saídas realizadas que ainda não foram marcadas como pagas. Clique para ver pendências." />
-        <StatCard title="Saldo previsto" value={formatCurrency(current.balance)} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} onClick={showBalanceDetail} tooltip="Receitas previstas menos gastos, cartões e dívidas deste mês. Clique para ver a fórmula." />
-        <StatCard title="Saldo projetado contas" value={formatCurrency(current.projectedAccountsBalance)} color={current.projectedAccountsBalance >= 0 ? 'green' : 'red'} icon={<Building2 size={18} />} onClick={showBankDetail} tooltip="Saldo em contas projetado para o mês, conforme o motor financeiro." />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-1">
+        <StatCard title="Entradas" value={formatCurrency(current.income)} subtitle={incomeContext} color="green" icon={<TrendingUp size={18} />} onClick={showIncomeDetail} tooltip="Receitas previstas do mês." />
+        <StatCard title="Saídas" value={formatCurrency(current.realizedExpenses)} subtitle={expenseContext} color="red" icon={<ReceiptText size={18} />} onClick={() => showExpensesDetail('Saídas', 'realized')} tooltip={`Previsto: ${formatCurrency(current.expectedExpenses)}.`} />
+        <StatCard title="A pagar" value={formatCurrency(current.unpaidExpenses)} subtitle={`${formatPercent(unpaidPercent)} pendente. ${unpaidContext}`} color={current.unpaidExpenses > 0 ? 'yellow' : 'green'} icon={<Banknote size={18} />} onClick={() => showExpensesDetail('A pagar', 'unpaid')} tooltip="Saídas ainda pendentes." />
+        <StatCard title="Saldo do mês" value={formatCurrency(current.balance)} subtitle={balanceContext} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} onClick={showBalanceDetail} tooltip={`Saldo em contas: ${formatCurrency(current.projectedAccountsBalance)}.`} />
       </div>
 
-      {/* Bloco 2: orçamento por categoria */}
-      {categoryBudgetUsages.length > 0 && (
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+        {/* Bloco 3: cartões */}
         <Card className="p-4">
-          <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <CreditCard size={18} className="text-blue-600" />
+                <h3 className="text-sm font-semibold text-gray-700">Cartões</h3>
+              </div>
+              <p className="mt-1 text-xs text-gray-400">{formatMonthBR(selectedMonth)}</p>
+            </div>
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => onNavigate('cartoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Ver cartões</button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <MetricItem label="Fatura do mês" value={formatCurrency(current.cardExpenses)} description={current.cardExpenses > 0 ? 'Valor que entra nas saídas deste mês.' : 'Sem fatura prevista neste mês.'} negative={current.cardExpenses > 0} />
+            <MetricItem label="Meta" value={formatCurrency(cardLimit)} description={cardPct > 100 ? 'A fatura passou da meta mensal.' : 'Referência para controlar a fatura.'} />
+            <MetricItem label="% da renda" value={formatPercent(cardIncomePercent)} description={cardIncomePercent >= 35 ? 'Cartões estão pesando na renda.' : 'Mostra o peso dos cartões na renda.'} negative={cardIncomePercent >= 35} />
+            <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} description={current.parcelasFuturas > 0 ? 'Compromisso que já chega nos próximos meses.' : 'Sem parcelas futuras cadastradas.'} negative={current.parcelasFuturas > 0} />
+          </div>
+          <div className="mt-3">
+            <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+              <span className="text-gray-400">Uso da meta mensal</span>
+              <Badge color={cardColor}>{formatPercent(cardPct)}</Badge>
+            </div>
+            <ProgressBar value={current.cardExpenses} max={cardLimit} color={cardColor} />
+          </div>
+        </Card>
+
+        {/* Bloco 3: próximos meses */}
+        <Card className="p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <LineChartIcon size={16} className="text-blue-600" />
+                <h3 className="text-sm font-semibold text-gray-700">Próximos meses</h3>
+              </div>
+              <p className="mt-1 text-xs text-gray-400">Visão rápida dos próximos {futureSummary?.months ?? 12} meses</p>
+            </div>
+            <button onClick={() => onNavigate('projecao')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Ver projeção</button>
+          </div>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-1 gap-2">
+            <MetricItem
+              label="Meses negativos"
+              value={`${futureSummary?.negativeMonths ?? 0} nos próximos ${futureSummary?.months ?? 12}`}
+              description={(futureSummary?.negativeMonths ?? 0) > 0 ? 'Há risco em meses futuros.' : 'Nenhum mês futuro crítico no período.'}
+              negative={(futureSummary?.negativeMonths ?? 0) > 0}
+              positive={(futureSummary?.negativeMonths ?? 0) === 0}
+            />
+            <MetricItem
+              label="Menor saldo previsto"
+              value={formatCurrency(futureSummary?.lowestProjectedAccountsBalance ?? 0)}
+              description={(futureSummary?.lowestProjectedAccountsBalance ?? 0) < 0 ? 'Saldo pode ficar negativo.' : 'Pior ponto ainda fica positivo.'}
+              negative={(futureSummary?.lowestProjectedAccountsBalance ?? 0) < 0}
+            />
+            <MetricItem
+              label="Maior comprometimento"
+              value={formatPercent(futureSummary?.highestIncomeCommitmentPercent ?? 0)}
+              description={(futureSummary?.highestIncomeCommitmentPercent ?? 0) >= 90 ? 'Pouco espaço de folga no futuro.' : 'Maior pressão prevista sobre a renda.'}
+              negative={(futureSummary?.highestIncomeCommitmentPercent ?? 0) >= 90}
+            />
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+        <Card className="p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <PieChartIcon size={18} className="text-blue-600" />
-              <h3 className="text-sm font-semibold text-gray-700">Orçamento por Categoria · {formatMonthBR(selectedMonth)}</h3>
+              <h3 className="text-sm font-semibold text-gray-700">Onde você mais gastou</h3>
             </div>
-            <button onClick={() => onNavigate('configuracoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Configurar</button>
+            {categoryRanking.length > 5 && (
+              <button type="button" onClick={showAllCategoriesDetail} className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                Ver todos
+              </button>
+            )}
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-            {topBudgetUsages.map((usage) => (
-              <div key={usage.budget.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <button type="button" onClick={() => showCategoryDetail(usage.category)} className="text-sm font-medium text-gray-700 truncate hover:text-blue-600">{usage.category}</button>
-                  <Badge color={budgetStatusColor[usage.status]}>{budgetStatusLabel[usage.status]}</Badge>
-                </div>
-                <div className="flex items-baseline justify-between gap-2 mb-2">
-                  <span className="text-sm font-bold text-gray-900">{formatCurrency(usage.realizedAmount)}</span>
-                  <span className="text-xs text-gray-400">de {formatCurrency(usage.budgetAmount)}</span>
-                </div>
-                <ProgressBar value={usage.usagePercent} max={100} color={usage.status === 'excedido' ? 'red' : usage.status === 'atencao' ? 'yellow' : 'green'} />
-                <div className="flex items-center justify-between gap-2 mt-2 text-xs">
-                  <span className="text-gray-400">{usage.usagePercent.toFixed(1)}% usado</span>
-                  <span className={usage.difference > 0 ? 'text-rose-600 font-medium' : 'text-emerald-600 font-medium'}>
-                    {usage.difference > 0 ? '+' : ''}{formatCurrency(usage.difference)}
-                  </span>
-                </div>
-              </div>
+          <div className="space-y-2">
+            {topCategoryRanking.length === 0 ? (
+              <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-400">Nenhum gasto encontrado neste mês.</p>
+            ) : (
+              topCategoryRanking.map((item, index) => (
+                <CategoryRankingRow
+                  key={item.category}
+                  item={item}
+                  index={index}
+                  total={categoryRankingTotal}
+                  onClick={() => showCategoryDetail(item.category)}
+                />
+              ))
+            )}
+          </div>
+        </Card>
+
+        {/* Bloco 5: saúde financeira */}
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <LineChartIcon size={16} className="text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-700">Saúde financeira</h3>
+            </div>
+            <Badge color="blue">{formatMonthBR(selectedMonth)}</Badge>
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            {homeHealthIndicators.map((indicator) => (
+              <HealthIndicatorCard
+                key={indicator.id}
+                indicator={indicator}
+                onClick={() => openDetail(`Saúde financeira · ${indicator.label}`, (
+                  <HealthIndicatorDetail indicator={indicator} />
+                ))}
+              />
             ))}
           </div>
         </Card>
-      )}
-
-      {/* Bloco 4: cartões */}
-      <Card className="p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <CreditCard size={18} className="text-blue-600" />
-              <h3 className="text-sm font-semibold text-gray-700">Cartões</h3>
-            </div>
-            <p className="mt-1 text-xs text-gray-400">{formatMonthBR(selectedMonth)}</p>
-          </div>
-          <div className="flex items-center justify-between mb-3">
-            <button onClick={() => onNavigate('cartoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Ver cartões</button>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
-          <MetricItem label="Fatura do mês" value={formatCurrency(current.cardExpenses)} negative={current.cardExpenses > 0} />
-          <MetricItem label="Meta" value={formatCurrency(cardLimit)} />
-          <MetricItem label="% da renda" value={formatPercent(current.income > 0 ? (current.cardExpenses / current.income) * 100 : 0)} negative={current.income > 0 && current.cardExpenses / current.income >= 0.35} />
-          <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} negative={current.parcelasFuturas > 0} />
-        </div>
-        <div className="mt-3">
-          <div className="mb-2 flex items-center justify-between gap-2 text-xs">
-            <span className="text-gray-400">Uso da meta mensal</span>
-            <Badge color={cardColor}>{formatPercent(cardPct)}</Badge>
-          </div>
-          <ProgressBar value={current.cardExpenses} max={cardLimit} color={cardColor} />
-        </div>
-      </Card>
-
-      {/* Bloco 5: próximos meses */}
-      <Card className="p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <LineChartIcon size={16} className="text-blue-600" />
-              <h3 className="text-sm font-semibold text-gray-700">Próximos meses</h3>
-            </div>
-            <p className="mt-1 text-xs text-gray-400">Visão rápida dos próximos {futureSummary?.months ?? 12} meses</p>
-          </div>
-          <button onClick={() => onNavigate('projecao')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Ver projeção</button>
-        </div>
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <MetricItem
-            label="Meses negativos"
-            value={`${futureSummary?.negativeMonths ?? 0} nos próximos ${futureSummary?.months ?? 12}`}
-            negative={(futureSummary?.negativeMonths ?? 0) > 0}
-            positive={(futureSummary?.negativeMonths ?? 0) === 0}
-          />
-          <MetricItem
-            label="Menor saldo previsto"
-            value={formatCurrency(futureSummary?.lowestProjectedAccountsBalance ?? 0)}
-            negative={(futureSummary?.lowestProjectedAccountsBalance ?? 0) < 0}
-          />
-          <MetricItem
-            label="Maior comprometimento"
-            value={formatPercent(futureSummary?.highestIncomeCommitmentPercent ?? 0)}
-            negative={(futureSummary?.highestIncomeCommitmentPercent ?? 0) >= 90}
-          />
-        </div>
-      </Card>
-
-      {/* Bloco 6: saúde financeira */}
-      <Card className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <LineChartIcon size={16} className="text-blue-600" />
-            <h3 className="text-sm font-semibold text-gray-700">Saúde financeira</h3>
-          </div>
-          <Badge color="blue">{formatMonthBR(selectedMonth)}</Badge>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          {homeHealthIndicators.map((indicator) => (
-            <HealthIndicatorCard
-              key={indicator.id}
-              indicator={indicator}
-              onClick={() => openDetail(`Saúde financeira · ${indicator.label}`, (
-                <HealthIndicatorDetail indicator={indicator} />
-              ))}
-            />
-          ))}
-        </div>
-      </Card>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5">
-        <ExpenseClassCard title="Essenciais" value={current.essentialExpenses} income={current.income} colorClass="text-emerald-600" />
-        <ExpenseClassCard title="Discricionários" value={current.discretionaryExpenses} income={current.income} colorClass="text-amber-600" />
-        <ExpenseClassCard title="Compromissos financeiros" value={current.financialCommitments} income={current.income} colorClass="text-purple-600" />
-        <ExpenseClassCard title="Outros" value={current.otherExpenses} income={current.income} colorClass="text-gray-700" />
       </div>
 
       <Card className="p-4">
@@ -465,23 +441,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         </ResponsiveContainer>
       </Card>
 
-      <Card className="p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <CheckCircle2 size={18} className="text-emerald-600" />
-          <h3 className="text-sm font-semibold text-gray-700">Checklist de recuperação</h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1">
-          {recovery.steps.map((step, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs">
-              <div className={`w-4 h-4 rounded-full flex items-center justify-center ${step.done ? 'bg-emerald-500' : 'bg-gray-200'}`}>
-                {step.done && <CheckCircle2 size={10} className="text-white" />}
-              </div>
-              <span className={step.done ? 'text-gray-700' : 'text-gray-400'}>{step.label}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
       {/* Detail Modal */}
       {detailModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setDetailModal(null)}>
@@ -498,11 +457,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   );
 }
 
-function MetricItem({ label, value, positive, negative }: { label: string; value: string; positive?: boolean; negative?: boolean }) {
+function MetricItem({ label, value, description, positive, negative }: { label: string; value: string; description?: string; positive?: boolean; negative?: boolean }) {
   return (
     <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
       <p className="text-xs text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
+      {description && <p className="mt-1 text-xs text-gray-500">{description}</p>}
     </div>
   );
 }
@@ -579,6 +539,33 @@ function DetailRow({ label, amount, colorClass, strong = false }: { label: strin
   );
 }
 
+function CategoryRankingRow({ item, index, total, onClick }: {
+  item: { category: string; value: number };
+  index: number;
+  total: number;
+  onClick: () => void;
+}) {
+  const percent = total > 0 ? (item.value / total) * 100 : 0;
+
+  return (
+    <button type="button" onClick={onClick} className="w-full rounded-lg bg-gray-50 p-3 text-left transition-colors hover:bg-blue-50">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-gray-500">
+            {index + 1}
+          </span>
+          <span className="truncate text-sm font-medium text-gray-700">{item.category}</span>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <span className="text-sm font-semibold text-gray-900">{formatCurrency(item.value)}</span>
+          <span className="w-12 text-right text-xs text-gray-400">{percent.toFixed(0)}%</span>
+        </div>
+      </div>
+      <ProgressBar value={percent} max={100} color={percent >= 35 ? 'red' : percent >= 20 ? 'yellow' : 'blue'} />
+    </button>
+  );
+}
+
 function HealthIndicatorCard({ indicator, onClick }: { indicator: FinancialHealthIndicator; onClick: () => void }) {
   const statusLabel = {
     bom: 'Bom',
@@ -652,16 +639,5 @@ function HealthIndicatorDetail({ indicator }: { indicator: FinancialHealthIndica
         <p className="mt-1 text-sm text-gray-700">{indicator.range}</p>
       </div>
     </div>
-  );
-}
-
-function ExpenseClassCard({ title, value, income, colorClass }: { title: string; value: number; income: number; colorClass: string }) {
-  const percent = income > 0 ? (value / income) * 100 : 0;
-  return (
-    <Card className="p-4">
-      <p className="text-xs text-gray-400">{title}</p>
-      <p className={`text-lg font-bold ${colorClass}`}>{formatCurrency(value)}</p>
-      <p className="text-xs text-gray-400 mt-1">{formatPercent(percent)} da renda</p>
-    </Card>
   );
 }
