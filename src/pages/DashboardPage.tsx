@@ -291,6 +291,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     .filter((usage) => usage.status !== 'saudavel')
     .concat(categoryBudgetUsages.filter((usage) => usage.status === 'saudavel'))
     .slice(0, 6);
+  const futureSummary = horizonSummaries.find((summary) => summary.months === 12) ?? horizonSummaries[horizonSummaries.length - 1];
 
   return (
     <div className="space-y-3">
@@ -415,24 +416,33 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
       {/* Bloco 5: próximos meses */}
       <Card className="p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <LineChartIcon size={16} className="text-blue-600" />
-          <h3 className="text-sm font-semibold text-gray-700">Próximos meses</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          {horizonSummaries.map((summary) => (
-            <div key={summary.months} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-gray-700">{summary.months} meses</p>
-                <Badge color={summary.negativeMonths > 0 ? 'red' : 'green'}>{summary.negativeMonths} negativo(s)</Badge>
-              </div>
-              <div className="mt-2 space-y-1 text-xs">
-                <div className="flex justify-between"><span className="text-gray-400">Menor saldo em contas</span><span className={summary.lowestProjectedAccountsBalance < 0 ? 'font-medium text-rose-600' : 'font-medium text-gray-700'}>{formatCurrency(summary.lowestProjectedAccountsBalance)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Maior fatura</span><span className="font-medium text-gray-700">{formatCurrency(summary.highestCardInvoice)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Maior comprometimento</span><span className="font-medium text-gray-700">{formatPercent(summary.highestIncomeCommitmentPercent)}</span></div>
-              </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <LineChartIcon size={16} className="text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-700">Próximos meses</h3>
             </div>
-          ))}
+            <p className="mt-1 text-xs text-gray-400">Visão rápida dos próximos {futureSummary?.months ?? 12} meses</p>
+          </div>
+          <button onClick={() => onNavigate('projecao')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Ver projeção</button>
+        </div>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <MetricItem
+            label="Meses negativos"
+            value={`${futureSummary?.negativeMonths ?? 0} nos próximos ${futureSummary?.months ?? 12}`}
+            negative={(futureSummary?.negativeMonths ?? 0) > 0}
+            positive={(futureSummary?.negativeMonths ?? 0) === 0}
+          />
+          <MetricItem
+            label="Menor saldo previsto"
+            value={formatCurrency(futureSummary?.lowestProjectedAccountsBalance ?? 0)}
+            negative={(futureSummary?.lowestProjectedAccountsBalance ?? 0) < 0}
+          />
+          <MetricItem
+            label="Maior comprometimento"
+            value={formatPercent(futureSummary?.highestIncomeCommitmentPercent ?? 0)}
+            negative={(futureSummary?.highestIncomeCommitmentPercent ?? 0) >= 90}
+          />
         </div>
       </Card>
 

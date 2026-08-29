@@ -559,7 +559,7 @@ Testes:
 
 ## ETAPA 05 — Simplificar "Próximos meses"
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P1
 
 ### Problema
@@ -598,22 +598,31 @@ Esses detalhes permanecem em Projeção.
 
 ### Critérios de aceite
 
-- [ ] Um único bloco substitui 3/6/12 meses.
-- [ ] Informação crítica futura é compreendida rapidamente.
-- [ ] Projeção detalhada continua disponível na página correspondente.
-- [ ] Não existe cálculo duplicado na Home.
+- [x] Um único bloco substitui 3/6/12 meses.
+- [x] Informação crítica futura é compreendida rapidamente.
+- [x] Projeção detalhada continua disponível na página correspondente.
+- [x] Não existe cálculo duplicado na Home.
 
 ### Notas de implementação
 
 ```text
 Resumo adotado:
--
+- Um único bloco "Próximos meses" usando o resumo de 12 meses retornado por `getProjectionHorizonSummaries`.
+- Métricas exibidas: meses negativos, menor saldo previsto e maior comprometimento.
+- CTA "Ver projeção" leva para a página detalhada de Projeção.
 
 Dados removidos da Home:
--
+- Cards separados de 3, 6 e 12 meses.
+- Maior fatura prevista ficou fora da Home para manter o bloco mais leve.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1667,6 +1676,7 @@ Adicionar uma linha sempre que uma etapa for concluída.
 | 2026-08-28 | Etapa 02 — Renomear indicadores para linguagem mais simples | Concluído | Dashboard passou a usar rótulos mais naturais como Entradas, Saídas, A pagar, Saldo do mês, Saldo em contas e Cartões no mês, mantendo termos técnicos em tooltips e detalhes. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 03 — Compactar Alertas Prioritários | Concluído | Alertas da Home foram movidos para um botão compacto ao lado do status financeiro, mantendo ordenação por severidade e descrições completas em modal. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 04 — Simplificar bloco de Cartões na Home | Concluído | Home passou a ter um único bloco compacto de cartões com fatura do mês, meta, percentual da renda, parcelas futuras e CTA para a página de Cartões. | src/pages/DashboardPage.tsx |
+| 2026-08-29 | Etapa 05 — Simplificar "Próximos meses" | Concluído | Cards de 3, 6 e 12 meses foram substituídos por um único resumo de 12 meses com meses negativos, menor saldo previsto, maior comprometimento e CTA para Projeção. | src/pages/DashboardPage.tsx |
 
 ---
 
