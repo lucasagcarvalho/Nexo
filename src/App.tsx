@@ -16,15 +16,59 @@ import { AnalisePage } from '@/pages/AnalisePage';
 import { PlanejamentoPage } from '@/pages/PlanejamentoPage';
 import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
 
+function routeFromLocation(): { page: PageId; accountId: string | null } {
+  const [, firstSegment, secondSegment] = window.location.pathname.split('/');
+  if (firstSegment === 'contas' && secondSegment) {
+    return { page: 'contas', accountId: decodeURIComponent(secondSegment) };
+  }
+  if (firstSegment === 'contas') {
+    return { page: 'contas', accountId: null };
+  }
+  return { page: 'dashboard', accountId: null };
+}
+
 function AppContent() {
   const { user, loading } = useAuth();
-  const [page, setPage] = useState<PageId>('dashboard');
+  const initialRoute = routeFromLocation();
+  const [page, setPage] = useState<PageId>(initialRoute.page);
+  const [accountId, setAccountId] = useState<string | null>(initialRoute.accountId);
+
+  const navigate = (nextPage: PageId) => {
+    setPage(nextPage);
+    setAccountId(null);
+    const nextPath = nextPage === 'contas' ? '/contas' : '/';
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState(null, '', nextPath);
+    }
+  };
+
+  const openAccount = (nextAccountId: string) => {
+    setPage('contas');
+    setAccountId(nextAccountId);
+    window.history.pushState(null, '', `/contas/${encodeURIComponent(nextAccountId)}`);
+  };
+
+  const backToAccounts = () => {
+    setPage('contas');
+    setAccountId(null);
+    window.history.pushState(null, '', '/contas');
+  };
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
-  }, [page]);
+  }, [page, accountId]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = routeFromLocation();
+      setPage(route.page);
+      setAccountId(route.accountId);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   if (loading) {
     return (
@@ -41,13 +85,13 @@ function AppContent() {
   return (
     <MonthProvider>
       <DataProvider>
-        <Layout current={page} onNavigate={setPage}>
-          {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
+        <Layout current={page} onNavigate={navigate}>
+          {page === 'dashboard' && <DashboardPage onNavigate={navigate} />}
           {page === 'visao-geral' && <VisaoGeralPage />}
           {page === 'receitas' && <ReceitasPage />}
           {page === 'gastos' && <GastosPage />}
           {page === 'cartoes' && <CartoesPage />}
-          {page === 'contas' && <ContasPage />}
+          {page === 'contas' && <ContasPage accountId={accountId} onOpenAccount={openAccount} onBackToAccounts={backToAccounts} />}
           {page === 'dividas' && <DividasPage />}
           {page === 'projecao' && <ProjecaoPage />}
           {page === 'analise' && <AnalisePage />}

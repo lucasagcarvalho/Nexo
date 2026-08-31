@@ -1,0 +1,2011 @@
+# Plano de Evolução — Fluxo de Caixa por Conta no NEXO
+
+## Objetivo
+
+Evoluir o NEXO para que receitas, despesas, faturas, dívidas, transferências e movimentações financeiras reflitam corretamente **onde o dinheiro entra, de onde ele sai, quanto existe de fato em cada conta e como esse saldo evolui ao longo do tempo**, sem dupla contagem e sem quebrar o motor financeiro existente.
+
+Este documento substitui a organização anterior do plano a partir da Etapa 11.
+
+As Etapas 01 a 10 já concluídas permanecem válidas e não devem ser refeitas, salvo se uma etapa futura exigir ajuste explícito e documentado.
+
+A partir desta revisão, a área de Contas deve funcionar de forma semelhante à experiência de aplicativos bancários:
+
+```text
+Lista de contas
+      ↓
+Abrir conta
+      ↓
+Dados da conta no topo
+      ↓
+Saldo / ações
+      ↓
+Extrato completo abaixo
+```
+
+Não utilizar modal como experiência principal para visualizar ou editar uma conta.
+
+---
+
+# DEFINIÇÕES DE DOMÍNIO
+
+## 1. Receita/despesa são fluxo; conta é estoque de dinheiro
+
+Exemplo:
+
+```text
+Saldo inicial Itaú: R$ 10
+Receita recebida:  +R$ 10
+
+Saldo atual Itaú:   R$ 20
+```
+
+No Dashboard:
+
+```text
+Entradas do mês:    R$ 10
+Saldo disponível:   R$ 20
+```
+
+Nunca:
+
+```text
+Entradas = R$ 20
+```
+
+porque os R$ 10 iniciais não pertencem à receita do mês.
+
+---
+
+## 2. Resultado do mês é diferente de saldo disponível
+
+```text
+Resultado do mês
+= receitas - despesas
+```
+
+```text
+Saldo disponível
+= soma dos saldos atuais das contas
+```
+
+O Dashboard deve mostrar os dois conceitos de forma clara.
+
+---
+
+## 3. Saldo negativo da conta não vira despesa automaticamente
+
+Uma conta em:
+
+```text
+-R$ 2.000
+```
+
+representa posição bancária negativa.
+
+Não significa automaticamente:
+
+```text
+Despesa do mês = R$ 2.000
+```
+
+---
+
+## 4. Transferências são neutras globalmente
+
+```text
+Itaú   -R$ 1.000
+Nubank +R$ 1.000
+```
+
+Resultado global:
+
+```text
+Receita: 0
+Despesa: 0
+Patrimônio bancário total: sem alteração
+```
+
+---
+
+## 5. Toda alteração real de saldo deve ser explicável pelo extrato
+
+O saldo deve ser reconstruível por:
+
+```text
+Saldo inicial
++ recebimentos
+- pagamentos
++ transferências recebidas
+- transferências enviadas
++ ajustes
++ estornos
+= saldo atual
+```
+
+---
+
+# REGRAS DE UX PARA CONTAS
+
+## Conta deve possuir página própria
+
+A tela principal de Contas mostra apenas resumo e lista.
+
+Ao selecionar uma conta, abrir uma tela dedicada, por exemplo:
+
+```text
+/contas/:accountId
+```
+
+A página da conta deve concentrar:
+
+- dados bancários;
+- saldo;
+- conciliação;
+- edição;
+- extrato;
+- movimentações;
+- estornos;
+- histórico.
+
+Editar a conta não deve abrir modal principal.
+
+Fluxo:
+
+```text
+Contas
+→ abrir conta
+→ página da conta
+→ Editar
+→ edição na própria tela
+```
+
+---
+
+## Dados da conta
+
+### Obrigatórios
+
+- Banco
+- Titular
+- Saldo
+
+### Opcionais
+
+- Tipo de conta
+- Agência
+- Número da conta
+- Observação
+
+### Remover
+
+O campo:
+
+```text
+Nome da conta
+```
+
+não deve mais ser obrigatório nem fazer parte da experiência principal.
+
+A conta deve ser identificada principalmente por:
+
+```text
+Banco
+Titular
+```
+
+Se for necessário manter `name` temporariamente por compatibilidade, ele deve ser tratado como legado/interno até migration segura.
+
+---
+
+## Tipos de conta
+
+O campo é opcional.
+
+Sugestões iniciais:
+
+```text
+Conta Corrente (C.C.)
+Conta Poupança (C.P.)
+Conta de Pagamento
+Conta Salário
+Conta Digital
+Conta Investimento
+Outra
+```
+
+Não limitar arquitetura somente a essas opções se o projeto já permitir enum extensível.
+
+---
+
+## Privacidade dos valores
+
+Deve existir botão global:
+
+```text
+👁 Olho aberto  → valores visíveis
+👁 Olho fechado → valores ocultos
+```
+
+Quando fechado, **todos os valores financeiros visíveis na aplicação** devem ficar ocultos, não apenas o saldo das contas.
+
+Exemplo:
+
+```text
+Saldo
+R$ ••••••
+```
+
+Deve ocultar:
+
+- saldos;
+- receitas;
+- despesas;
+- faturas;
+- dívidas;
+- projeções;
+- objetivos futuros;
+- valores em extratos;
+- totais e subtotais.
+
+Não esconder:
+
+- nomes;
+- datas;
+- categorias;
+- status;
+- textos.
+
+A preferência deve ser consistente durante a sessão e, se a arquitetura permitir com segurança, persistida por usuário/dispositivo.
+
+---
+
+## Tema claro e escuro
+
+O NEXO deve suportar:
+
+```text
+Claro
+Escuro
+Sistema
+```
+
+Todas as telas novas e alteradas neste plano devem funcionar nos dois temas.
+
+Não criar cores hardcoded que funcionem apenas no tema claro.
+
+---
+
+## Tooltips
+
+Corrigir comportamento observado nos ícones de edição:
+
+```text
+hover/focus → tooltip aparece
+click       → tooltip fecha imediatamente
+modal/tela  → tooltip anterior não permanece sobreposto
+```
+
+Nenhum tooltip pode ficar visível por cima de modal, drawer ou navegação depois da ação ter sido executada.
+
+---
+
+# INSTRUÇÕES DE EXECUÇÃO PARA O CODEX
+
+## Regra principal
+
+Execute **uma etapa por vez**.
+
+Não implemente duas etapas simultaneamente.
+
+Não antecipe etapas futuras.
+
+Ao iniciar uma etapa:
+
+1. Leia completamente a etapa atual.
+2. Analise o código existente relacionado.
+3. Identifique arquivos e dependências.
+4. Reutilize o motor financeiro atual.
+5. Não recrie cálculo financeiro na UI.
+6. Preserve dados já existentes.
+7. Implemente somente a etapa atual.
+8. Rode:
+   - `npm test`
+   - `npm run typecheck`
+   - `npm run lint`
+   - `npm run build`
+9. Faça validação visual/manual.
+10. Validar tema claro e escuro quando houver UI.
+11. Atualize `Notas de implementação`.
+12. Atualize `Histórico de execução`.
+13. Marque `[x]` somente quando todos os critérios forem atendidos.
+14. Pare.
+15. Aguarde autorização.
+
+Resposta:
+
+> Etapa XX concluída. Alterações implementadas e validadas. Aguardando autorização para iniciar a próxima etapa.
+
+**Nunca iniciar automaticamente a etapa seguinte.**
+
+---
+
+# REGRA DE SEGURANÇA
+
+- Não transformar saldo bancário em receita.
+- Não transformar saldo negativo em despesa.
+- Não duplicar movimentações.
+- Não gerar pagamento duas vezes.
+- Não gerar recebimento duas vezes.
+- Não gerar estorno duas vezes.
+- Não contar transferência como receita/despesa.
+- Não apagar histórico para simular estorno.
+- Não remover campos legados sem migration.
+- Toda ação que altera saldo deve ser confirmada.
+- Operações devem ser idempotentes.
+- Dashboard não deve somar saldo atual novamente às receitas.
+- Objetivos Financeiros permanecem fora deste plano até a preparação final.
+
+Se houver divergência:
+
+```text
+[!] BLOQUEADO
+```
+
+Documentar e aguardar decisão.
+
+---
+
+# CONVENÇÕES
+
+Status:
+
+- `[ ]` Pendente
+- `[~]` Em andamento
+- `[x]` Concluído
+- `[!]` Bloqueado
+
+Prioridade:
+
+- **P0** — integridade financeira
+- **P1** — fluxo principal
+- **P2** — experiência/automação
+- **P3** — refinamento
+
+---
+
+# ETAPAS JÁ CONCLUÍDAS
+
+## ETAPA 01 — Criar o modelo de movimentações bancárias
+
+**Status:** [x]
+
+Concluído:
+
+- `AccountTransaction`;
+- tipos de movimentação;
+- `AppData.accountTransactions`;
+- migration compatível;
+- persistência local/Supabase;
+- testes.
+
+---
+
+## ETAPA 02 — Formalizar saldo inicial por conta
+
+**Status:** [x]
+
+Concluído:
+
+- `initial_balance`;
+- compatibilidade com `BankAccount.balance`;
+- migration idempotente;
+- novas contas com origem contábil.
+
+---
+
+## ETAPA 03 — Criar funções centrais do ledger
+
+**Status:** [x]
+
+Concluído:
+
+- filtros;
+- soma;
+- saldo;
+- busca por entidade;
+- reversões;
+- idempotência;
+- proteção contra valores inválidos.
+
+---
+
+## ETAPA 04 — Calcular saldo por ledger
+
+**Status:** [x]
+
+Concluído:
+
+- saldo reconstruível por conta;
+- saldo total por ledger;
+- comparação com `BankAccount.balance`;
+- detecção de divergências.
+
+---
+
+## ETAPA 05 — Criar conciliação de saldo
+
+**Status:** [x]
+
+Concluído:
+
+- saldo informado;
+- saldo calculado;
+- diferença;
+- `manual_adjustment`;
+- snapshot;
+- atualização compatível de `BankAccount.balance`.
+
+Observação:
+
+A experiência visual desta funcionalidade será reorganizada na página própria da conta em etapa futura.
+
+---
+
+## ETAPA 06 — Vincular receita à conta destino
+
+**Status:** [x]
+
+Concluído:
+
+- `Income.defaultAccountId`;
+- UI de conta destino;
+- migration;
+- alerta para conta removida.
+
+---
+
+## ETAPA 07 — Criar recebimento mensal de receita
+
+**Status:** [x]
+
+Concluído:
+
+- `IncomeReceipt`;
+- conta;
+- data;
+- valor;
+- `income_receipt`;
+- saldo bancário atualizado;
+- idempotência.
+
+---
+
+## ETAPA 08 — Permitir desfazer recebimento
+
+**Status:** [x]
+
+Concluído:
+
+- reversão;
+- saldo restaurado;
+- histórico preservado;
+- proteção contra estorno duplicado.
+
+---
+
+## ETAPA 09 — Vincular pagamento de gasto à conta
+
+**Status:** [x]
+
+Concluído:
+
+- `ExpensePayment`;
+- conta;
+- data;
+- valor;
+- `expense_payment`;
+- redução do saldo;
+- compatibilidade com `paidMonths`.
+
+---
+
+## ETAPA 10 — Estornar pagamento de gasto
+
+**Status:** [x]
+
+Concluído:
+
+- reversão do pagamento;
+- saldo devolvido;
+- status mensal restaurado;
+- histórico preservado;
+- idempotência.
+
+---
+
+# FASE 5 — REESTRUTURAÇÃO DA ÁREA DE CONTAS
+
+## ETAPA 11 — Evoluir o model cadastral de conta
+
+**Status:** [x]  
+**Prioridade:** P1
+
+### Objetivo
+
+Adequar `BankAccount` à nova experiência.
+
+### Dados
+
+Obrigatórios:
+
+```text
+Banco
+Titular
+Saldo
+```
+
+Opcionais:
+
+```text
+Tipo de conta
+Agência
+Número da conta
+Observação
+```
+
+### Remover da experiência
+
+```text
+Nome da conta
+```
+
+### Compatibilidade
+
+Se atualmente existir:
+
+```ts
+name: string
+```
+
+não remover de forma destrutiva sem avaliar migration.
+
+Pode:
+
+- manter como legado temporário;
+- preencher valor compatível em migration;
+- parar de exigir/exibir na UI;
+- remover definitivamente somente após auditoria.
+
+### Sugestão conceitual
+
+```ts
+interface BankAccount {
+  id: string;
+  bank: string;
+  holder: string;
+  balance: number;
+
+  accountType?: BankAccountType | null;
+  agency?: string | null;
+  accountNumber?: string | null;
+  note?: string;
+
+  name?: string; // legado temporário, se necessário
+}
+```
+
+### Critérios de aceite
+
+- [x] Banco obrigatório.
+- [x] Titular obrigatório.
+- [x] Saldo obrigatório.
+- [x] Tipo opcional.
+- [x] Agência opcional.
+- [x] Número da conta opcional.
+- [x] Observação opcional.
+- [x] Nome da conta não é solicitado na UI.
+- [x] Dados existentes continuam abrindo.
+- [x] Migration segura.
+
+### Notas de implementação
+
+```text
+Model:
+- `BankAccount` passa a ter banco, titular, saldo, tipo, agência, número da conta e observação; `name` permanece opcional como legado.
+- `BankAccountType` centraliza os tipos aceitos.
+
+Migration:
+- `migrateBankAccount` preserva dados antigos com `name` e preenche um rótulo compatível quando o backup não possui nome.
+- Novos campos opcionais recebem fallback seguro para `null`.
+
+UI:
+- Cadastro/edição de contas não solicita mais "Nome da conta".
+- Banco, titular e saldo são obrigatórios; tipo, agência, número da conta e observação são opcionais.
+- Listas, histórico, conciliação e seletores usam rótulo gerado por banco/titular.
+
+Arquivos:
+- `src/lib/types.ts`
+- `src/lib/storage.ts`
+- `src/lib/finance/accountRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/ContasPage.tsx`
+- `src/pages/ReceitasPage.tsx`
+- `src/pages/PlanejamentoPage.tsx`
+- `src/pages/GastosPage.tsx`
+- `test/finance.test.ts`
+
+Testes:
+- `npm run typecheck`
+- `npm test`
+- `npm run lint` (sem erros; warnings existentes de Fast Refresh)
+- `npm run build` (sucesso; warning existente de chunk grande/Browserslist)
+```
+
+---
+
+## ETAPA 12 — Criar página de detalhe da conta
+
+**Status:** [x]  
+**Prioridade:** P1
+
+### Objetivo
+
+Substituir a experiência baseada em modal por página dedicada.
+
+### Navegação
+
+```text
+Contas
+→ selecionar uma conta
+→ /contas/:accountId
+```
+
+### Topo da tela
+
+Mostrar:
+
+```text
+Banco
+Titular
+Tipo (se houver)
+Agência (se houver)
+Conta (se houver)
+Observação (se houver)
+
+Saldo atual
+Saldo por ledger
+Status de conciliação
+```
+
+### Ações
+
+```text
+Editar
+Atualizar/Conciliar saldo
+```
+
+Transferência **não deve ficar como ação exclusiva interna da conta**.
+
+Ela será ação global da área de Contas.
+
+### Edição
+
+Ao clicar em `Editar`:
+
+- permanecer no contexto da página da conta;
+- usar modo de edição na própria página ou rota equivalente;
+- não depender de modal central.
+
+### Critérios de aceite
+
+- [x] Cada conta possui URL/tela própria.
+- [x] Card/lista abre a página.
+- [x] Dados aparecem no topo.
+- [x] Edição ocorre no contexto da página.
+- [x] Conta inexistente é tratada.
+- [x] Responsivo.
+- [x] Tema claro.
+- [x] Tema escuro.
+- [x] Navegação por teclado.
+
+### Notas de implementação
+
+```text
+Rota:
+- `/contas` abre a lista de contas.
+- `/contas/:accountId` abre a página dedicada da conta.
+- A navegação interna preserva histórico do navegador e trata `popstate`.
+
+Layout:
+- Lista permanece como resumo/cards, sem ações de editar, excluir ou atualizar saldo nos cards.
+- O card inteiro atua como entrada para a página dedicada da conta.
+- Página de detalhe mostra banco, titular, tipo, agência, conta, observação, saldo atual, saldo por ledger e status de conciliação no topo.
+- Conta inexistente exibe estado vazio com retorno para a lista.
+
+Edição:
+- Edição acontece dentro da página dedicada, sem modal principal.
+- Exclusão e atualização/conciliação de saldo ficam dentro da página dedicada da conta.
+- Criação de nova conta permanece no fluxo existente.
+
+Arquivos:
+- `src/App.tsx`
+- `src/pages/ContasPage.tsx`
+```
+
+---
+
+## ETAPA 13 — Criar extrato dentro da página da conta
+
+**Status:** [x]  
+**Prioridade:** P1
+
+### Objetivo
+
+O extrato deve ficar **abaixo dos dados da conta**, como em aplicativo bancário.
+
+### Exemplo
+
+```text
+Itaú
+Lucas
+C.C. • Ag 1234 • Conta 56789-0
+
+Saldo atual
+R$ 8.300,00
+
+--------------------------------
+
+Extrato
+
+15/09  Salário Lucas
+        Recebimento
+        + R$ 10.000
+
+16/09  Aluguel
+        Pagamento
+        - R$ 2.000
+
+17/09  Transferência para Nubank
+        - R$ 1.000
+
+18/09  Estorno Energia
+        + R$ 300
+```
+
+### Cada movimentação deve mostrar
+
+- data;
+- descrição;
+- tipo;
+- valor;
+- origem relacionada;
+- destino/origem quando transferência;
+- sinal de estorno;
+- saldo após a movimentação quando tecnicamente confiável.
+
+### Filtros
+
+- mês;
+- tipo;
+- entradas/saídas;
+- busca simples, se já houver infraestrutura adequada.
+
+### Regra
+
+Não criar uma página global de extrato como experiência principal.
+
+A origem principal do extrato é:
+
+```text
+Conta → Extrato
+```
+
+Uma visão global poderá existir futuramente como complemento.
+
+### Critérios de aceite
+
+- [x] Extrato abaixo dos dados.
+- [x] Ordem cronológica correta.
+- [x] Movimentações explicáveis.
+- [x] Estornos visíveis.
+- [x] Transferências mostram contraparte.
+- [x] Filtro mensal.
+- [x] Tema claro/escuro.
+- [~] Valores respeitam modo oculto.
+
+### Notas de implementação
+
+```text
+Extrato:
+- Extrato renderizado abaixo do topo da página dedicada da conta.
+- Movimentações usam o ledger central ordenado cronologicamente.
+- Cada linha mostra data, título, tipo, valor, origem relacionada e saldo após a movimentação.
+- Estornos recebem identificação visual própria e referência da transação estornada quando disponível.
+- Transferências buscam contraparte pelo identificador relacionado e exibem origem/destino quando houver a segunda perna.
+
+Filtros:
+- Mês.
+- Tipo de movimentação.
+- Entradas/saídas.
+- Busca simples por descrição, origem, tipo ou data.
+
+Arquivos:
+- `src/pages/ContasPage.tsx`
+
+Observação:
+- A aplicação ainda não possui o modo global de ocultação de valores; esse estado será criado na Etapa 14. O extrato concentra seus valores em pontos explícitos de renderização para integração direta com esse modo.
+```
+
+---
+
+## ETAPA 14 — Criar privacidade global de valores
+
+**Status:** [ ]  
+**Prioridade:** P2
+
+### Objetivo
+
+Adicionar controle global com ícone de olho.
+
+### Estados
+
+```text
+VISIBLE
+HIDDEN
+```
+
+### Regra
+
+Olho aberto:
+
+```text
+R$ 8.300,00
+```
+
+Olho fechado:
+
+```text
+R$ ••••••
+```
+
+### Escopo
+
+Ocultar valores em toda a aplicação:
+
+- Dashboard;
+- Contas;
+- extrato;
+- Receitas;
+- Gastos;
+- Planejamento;
+- Cartões;
+- Dívidas;
+- Projeção;
+- Análise;
+- módulos futuros.
+
+### Arquitetura
+
+Não espalhar condições manuais em cada valor se puder existir um componente/helper central, por exemplo:
+
+```text
+MoneyValue
+PrivacyAmount
+useMoneyVisibility
+```
+
+### Critérios de aceite
+
+- [ ] Um único controle altera toda a aplicação.
+- [ ] Estado visual do olho é claro.
+- [ ] Valores ficam realmente ocultos.
+- [ ] Labels permanecem visíveis.
+- [ ] Não há flash indevido de valores ao navegar.
+- [ ] Funciona em desktop/tablet/mobile.
+- [ ] Acessível por teclado.
+- [ ] `aria-label` informa Mostrar/Ocultar valores.
+
+### Notas de implementação
+
+```text
+State:
+-
+
+Componente:
+-
+
+Persistência:
+-
+
+Arquivos:
+-
+```
+
+---
+
+## ETAPA 15 — Implementar tema claro, escuro e sistema
+
+**Status:** [ ]  
+**Prioridade:** P2
+
+### Objetivo
+
+Suportar:
+
+```text
+Claro
+Escuro
+Sistema
+```
+
+### Escopo
+
+Aplicar a toda a aplicação, começando pelas páginas e componentes alterados neste plano.
+
+Revisar:
+
+- backgrounds;
+- cards;
+- modais;
+- inputs;
+- tabelas;
+- extrato;
+- gráficos;
+- tooltips;
+- estados de erro;
+- alertas;
+- hover/focus.
+
+### Regra
+
+Não usar cores fixas que prejudiquem o tema oposto.
+
+### Critérios de aceite
+
+- [ ] Claro funciona.
+- [ ] Escuro funciona.
+- [ ] Sistema acompanha preferência do SO/navegador.
+- [ ] Contraste adequado.
+- [ ] Gráficos continuam legíveis.
+- [ ] Tooltips legíveis.
+- [ ] Preferência persistida.
+
+### Notas de implementação
+
+```text
+Theme:
+-
+
+Tokens/classes:
+-
+
+Arquivos:
+-
+```
+
+---
+
+## ETAPA 16 — Corrigir lifecycle e sobreposição de tooltips
+
+**Status:** [ ]  
+**Prioridade:** P2
+
+### Problema confirmado
+
+Tooltip do ícone de edição permanece visível após o clique e aparece por cima da modal/tela aberta.
+
+### Regra global
+
+```text
+hover/focus → abre
+mouseleave/blur → fecha
+click → fecha antes da ação
+modal/dialog/navigation → tooltip anterior fechado
+```
+
+### Validar
+
+- lápis;
+- excluir;
+- olho;
+- ações de cards;
+- demais tooltips compartilhados.
+
+### Critérios de aceite
+
+- [ ] Tooltip nunca fica preso.
+- [ ] Tooltip não aparece sobre modal após ação.
+- [ ] Click fecha tooltip.
+- [ ] Escape/modal não deixa tooltip órfão.
+- [ ] Mouse e teclado funcionam.
+- [ ] Tema claro/escuro.
+
+### Notas de implementação
+
+```text
+Causa:
+-
+
+Correção:
+-
+
+Componentes:
+-
+
+Arquivos:
+-
+```
+
+---
+
+# FASE 6 — CONFIRMAÇÕES DE MOVIMENTAÇÕES
+
+## ETAPA 17 — Padronizar confirmação antes de alterar saldo
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Objetivo
+
+Toda ação que altera saldo deve mostrar confirmação antes de efetivar.
+
+### Recebimento
+
+```text
+Confirmar recebimento?
+
+Salário Lucas
+R$ 10.000
+Conta: Itaú
+Data: 05/09/2026
+
+Saldo atual: R$ 2.000
+Saldo após:  R$ 12.000
+```
+
+### Pagamento
+
+```text
+Confirmar pagamento?
+
+Energia
+R$ 300
+Conta: Nubank
+
+Saldo atual: R$ 500
+Saldo após:  R$ 200
+```
+
+### Estorno
+
+```text
+Desfazer pagamento?
+
+O valor de R$ 300 retornará para Nubank.
+```
+
+### Saldo insuficiente
+
+Não bloquear obrigatoriamente.
+
+Mostrar:
+
+```text
+Atenção
+Este pagamento deixará a conta em -R$ 100.
+```
+
+Oferecer:
+
+```text
+Cancelar
+Escolher outra conta
+Continuar mesmo assim
+```
+
+### Critérios de aceite
+
+- [ ] Recebimento exige confirmação final.
+- [ ] Pagamento exige confirmação final.
+- [ ] Estorno exige confirmação.
+- [ ] Saldo antes/depois aparece quando aplicável.
+- [ ] Valor negativo gera alerta.
+- [ ] Nada é gravado antes da confirmação.
+- [ ] Duplo clique não duplica evento.
+
+### Notas de implementação
+
+```text
+Componente:
+-
+
+Fluxos:
+-
+
+Arquivos:
+-
+```
+
+---
+
+# FASE 7 — FATURAS DE CARTÃO
+
+## ETAPA 18 — Registrar conta pagadora da fatura
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Objetivo
+
+Ao pagar:
+
+```text
+Fatura Nubank
+R$ 2.500
+Conta pagadora: Itaú
+Data: 10/09/2026
+```
+
+Gerar:
+
+```text
+card_invoice_payment -R$ 2.500
+```
+
+### Regra
+
+A fatura já faz parte das despesas.
+
+O ledger apenas informa de onde o dinheiro saiu.
+
+### Critérios de aceite
+
+- [ ] Conta obrigatória.
+- [ ] Confirmação antes do pagamento.
+- [ ] Valor correto.
+- [ ] Saldo antes/depois.
+- [ ] Saldo reduz.
+- [ ] Sem dupla contagem.
+- [ ] Movimento aparece no extrato da conta.
+
+### Notas de implementação
+
+```text
+Model:
+-
+
+Fluxo:
+-
+
+Arquivos:
+-
+```
+
+---
+
+## ETAPA 19 — Estornar pagamento de fatura
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Critérios de aceite
+
+- [ ] Confirmação antes de estornar.
+- [ ] Fatura volta a pendente.
+- [ ] Valor retorna à conta.
+- [ ] Movimento original preservado.
+- [ ] `reversal` aparece no extrato.
+- [ ] Limite do cartão continua correto.
+- [ ] Idempotência.
+
+### Notas de implementação
+
+```text
+Fluxo:
+-
+
+Arquivos:
+-
+```
+
+---
+
+# FASE 8 — DÍVIDAS
+
+## ETAPA 20 — Criar pagamento mensal de dívida por conta
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Objetivo
+
+```text
+Empréstimo
+Parcela R$ 700
+Conta: Santander
+Data: 15/09
+```
+
+Gerar:
+
+```text
+debt_payment -R$ 700
+```
+
+### Critérios de aceite
+
+- [ ] Estado mensal.
+- [ ] Conta.
+- [ ] Data.
+- [ ] Valor real.
+- [ ] Confirmação.
+- [ ] Saldo reduz.
+- [ ] Extrato recebe movimento.
+- [ ] Projeção de dívida continua coerente.
+
+### Notas de implementação
+
+```text
+Model:
+-
+
+Arquivos:
+-
+```
+
+---
+
+## ETAPA 21 — Estornar pagamento mensal de dívida
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Critérios de aceite
+
+- [ ] Confirmação.
+- [ ] Parcela retorna a pendente.
+- [ ] Saldo retorna.
+- [ ] Estorno no extrato.
+- [ ] Histórico preservado.
+- [ ] Idempotência.
+
+### Notas de implementação
+
+```text
+Fluxo:
+-
+
+Arquivos:
+-
+```
+
+---
+
+# FASE 9 — TRANSFERÊNCIAS ENTRE CONTAS
+
+## ETAPA 22 — Criar transferência global entre contas
+
+**Status:** [ ]  
+**Prioridade:** P1
+
+### UX
+
+Na tela principal `Contas`:
+
+```text
+[Transferir saldo] [+ Nova conta]
+```
+
+A transferência é ação **global**, não ação escondida dentro de uma conta específica.
+
+### Formulário
+
+```text
+Conta de origem
+Conta de destino
+Valor
+Data
+Observação opcional
+```
+
+### Preview
+
+```text
+Itaú
+Atual: R$ 3.000
+Depois: R$ 2.000
+
+Nubank
+Atual: R$ 500
+Depois: R$ 1.500
+```
+
+### Ledger
+
+```text
+Itaú   transfer_out -R$ 1.000
+Nubank transfer_in  +R$ 1.000
+```
+
+### Regras
+
+- origem != destino;
+- valor > 0;
+- confirmação obrigatória;
+- saldo negativo permitido apenas após alerta explícito;
+- não altera receita/despesa global.
+
+### Critérios de aceite
+
+- [ ] Botão global.
+- [ ] Duas pernas.
+- [ ] Mesmo identificador de transferência.
+- [ ] Confirmação.
+- [ ] Preview antes/depois.
+- [ ] Extrato de ambas as contas.
+- [ ] Total bancário não muda.
+- [ ] Sem receita/despesa.
+
+### Notas de implementação
+
+```text
+Model:
+-
+
+UI:
+-
+
+Arquivos:
+-
+```
+
+---
+
+## ETAPA 23 — Permitir estorno de transferência
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Objetivo
+
+Desfazer uma transferência deve gerar reversão nas duas contas.
+
+Não apagar as pernas originais.
+
+### Critérios de aceite
+
+- [ ] Confirmação.
+- [ ] Duas reversões consistentes.
+- [ ] Saldos restaurados.
+- [ ] Histórico preservado em ambas.
+- [ ] Sem efeito em receita/despesa.
+- [ ] Idempotência.
+
+### Notas de implementação
+
+```text
+Fluxo:
+-
+
+Arquivos:
+-
+```
+
+---
+
+# FASE 10 — DASHBOARD E LEITURA DE CAIXA
+
+## ETAPA 24 — Separar Resultado do mês de Saldo disponível
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Objetivo
+
+Eliminar ambiguidade do atual `Saldo do mês`.
+
+### Conceitos
+
+```text
+Entradas do mês
+= receitas do mês
+```
+
+```text
+Saídas do mês
+= despesas do mês conforme regra oficial do motor
+```
+
+```text
+Resultado do mês
+= receitas - despesas
+```
+
+```text
+Saldo disponível
+= soma atual dos saldos das contas
+```
+
+### Exemplo
+
+```text
+Saldo inicial em contas: R$ 3.000
+Entradas do mês:        R$ 10.000
+Saídas do mês:          R$  2.300
+Resultado do mês:       R$  7.700
+Saldo disponível:       R$ 10.700
+```
+
+### Importante
+
+Nunca:
+
+```text
+Entradas = saldo das contas + receitas
+```
+
+### Dashboard
+
+Revisar hierarquia para que o usuário encontre:
+
+- Entradas;
+- Saídas;
+- A pagar;
+- Resultado do mês;
+- Saldo disponível.
+
+Não necessariamente todos como cards de mesmo peso.
+
+Manter Home simples conforme plano de UX já concluído.
+
+### Critérios de aceite
+
+- [ ] Saldo inicial considerado no caixa.
+- [ ] Receita recebida já presente na conta não é duplicada.
+- [ ] Resultado e saldo disponível são distintos.
+- [ ] Transferências não alteram resultado.
+- [ ] Estornos alteram saldo corretamente.
+- [ ] Valores batem com Contas.
+- [ ] Tooltips explicam diferença.
+
+### Notas de implementação
+
+```text
+Layout:
+-
+
+Conceitos:
+-
+
+Arquivos:
+-
+```
+
+---
+
+# FASE 11 — PROJEÇÃO POR CONTA
+
+## ETAPA 25 — Criar projeção mensal por conta
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Fórmula por conta
+
+```text
+Saldo inicial
++ receitas previstas destinadas à conta
+- pagamentos previstos pela conta
++ transferências previstas recebidas
+- transferências previstas enviadas
+= saldo final
+```
+
+### Encadeamento
+
+```text
+Saldo final Setembro
+→ Saldo inicial Outubro
+```
+
+### Critérios de aceite
+
+- [ ] Cada conta tem projeção.
+- [ ] Saldo final encadeia mês seguinte.
+- [ ] Agregado = soma das contas.
+- [ ] Transferências anulam no agregado.
+- [ ] Sem dupla contagem.
+
+### Notas de implementação
+
+```text
+Engine:
+-
+
+Arquivos:
+-
+```
+
+---
+
+## ETAPA 26 — Evoluir `projectMonths` preservando compatibilidade
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Preservar
+
+```text
+income
+totalExpenses
+balance
+```
+
+Adicionar conceitos novos, sem mudar silenciosamente os antigos.
+
+### Possíveis campos
+
+```ts
+accountCashflow
+openingAccountsBalance
+closingAccountsBalance
+availableAccountsBalance
+```
+
+### Critérios de aceite
+
+- [ ] Dashboard funciona.
+- [ ] Planejamento funciona.
+- [ ] Projeção funciona.
+- [ ] Análise funciona.
+- [ ] Testes antigos continuam passando.
+- [ ] Novos campos centralizados.
+
+### Notas de implementação
+
+```text
+Campos:
+-
+
+Compatibilidade:
+-
+```
+
+---
+
+# FASE 12 — AGENDA E RISCO DE CAIXA
+
+## ETAPA 27 — Criar linha do tempo financeira do mês
+
+**Status:** [ ]  
+**Prioridade:** P1
+
+### Exemplo
+
+```text
+05/09 Salário        +10.000 Itaú
+06/09 Aluguel         -2.000 Itaú
+08/09 Energia           -300 Nubank
+10/09 Fatura          -1.500 Itaú
+15/09 Empréstimo        -700 Santander
+```
+
+### Critérios de aceite
+
+- [ ] Ordenação por data.
+- [ ] Entradas e saídas.
+- [ ] Conta.
+- [ ] Previsto/realizado.
+- [ ] Abre origem.
+
+### Notas de implementação
+
+```text
+Engine:
+-
+
+UI:
+-
+```
+
+---
+
+## ETAPA 28 — Detectar saldo negativo ao longo do mês
+
+**Status:** [ ]  
+**Prioridade:** P1
+
+### Objetivo
+
+Não olhar apenas o saldo final.
+
+Exemplo:
+
+```text
+10/09
+Nubank ficará em -R$ 50
+```
+
+### Critérios de aceite
+
+- [ ] Detecta primeira data negativa.
+- [ ] Mostra conta.
+- [ ] Mostra déficit.
+- [ ] Considera receitas anteriores.
+- [ ] Considera pagamentos anteriores.
+
+### Notas de implementação
+
+```text
+Engine:
+-
+
+Alertas:
+-
+```
+
+---
+
+# FASE 13 — RECOMENDAÇÕES OPERACIONAIS
+
+## ETAPA 29 — Criar análise "o que pagar primeiro"
+
+**Status:** [ ]  
+**Prioridade:** P2
+
+Considerar:
+
+- vencimento;
+- saldo;
+- entrada futura;
+- risco;
+- conta pagadora;
+- compromissos seguintes.
+
+Não pagar automaticamente.
+
+### Critérios de aceite
+
+- [ ] Recomenda, não executa.
+- [ ] Explica motivo.
+- [ ] Respeita datas.
+- [ ] Considera caixa futuro.
+
+### Notas de implementação
+
+```text
+Engine:
+-
+
+UI:
+-
+```
+
+---
+
+## ETAPA 30 — Sugerir transferências preventivas
+
+**Status:** [ ]  
+**Prioridade:** P2
+
+### Exemplo
+
+```text
+Nubank ficará negativo em R$ 350 em 10/09.
+Itaú possui folga suficiente.
+
+Sugestão:
+Transferir R$ 350 do Itaú antes de 10/09.
+```
+
+### Critérios de aceite
+
+- [ ] Não executa automaticamente.
+- [ ] Não prejudica origem.
+- [ ] Considera eventos futuros da origem.
+- [ ] Sugere valor/data.
+
+### Notas de implementação
+
+```text
+Engine:
+-
+
+UI:
+-
+```
+
+---
+
+# FASE 14 — SNAPSHOTS E CONCILIAÇÃO FINAL
+
+## ETAPA 31 — Reposicionar snapshots como conferência
+
+**Status:** [ ]  
+**Prioridade:** P1
+
+### Regra
+
+Snapshot não deve sobrescrever silenciosamente.
+
+Exemplo:
+
+```text
+Saldo real banco: R$ 5.240
+Ledger:           R$ 5.190
+Diferença:        R$    50
+```
+
+Opções:
+
+- revisar extrato;
+- criar ajuste;
+- cancelar.
+
+### Critérios de aceite
+
+- [ ] Diferença explícita.
+- [ ] Confirmação.
+- [ ] Histórico preservado.
+- [ ] Conciliação dentro da página da conta.
+
+### Notas de implementação
+
+```text
+Fluxo:
+-
+
+Arquivos:
+-
+```
+
+---
+
+# FASE 15 — AUDITORIA FINANCEIRA
+
+## ETAPA 32 — Auditoria completa de fluxo por conta
+
+**Status:** [ ]  
+**Prioridade:** P0
+
+### Cenário
+
+```text
+Saldo inicial Itaú:    R$ 5.000
+Saldo inicial Nubank:  R$ 2.000
+
+Salário:       +R$ 10.000 → Itaú
+Aluguel:       -R$  2.000 → Itaú
+Energia:       -R$    300 → Nubank
+Transferência:  R$  1.000 Itaú → Nubank
+```
+
+### Resultado mensal
+
+```text
+Receitas:       R$ 10.000
+Despesas:       R$  2.300
+Resultado mês:  R$  7.700
+```
+
+### Saldos
+
+```text
+Itaú:
+5.000 + 10.000 - 2.000 - 1.000 = 12.000
+
+Nubank:
+2.000 - 300 + 1.000 = 2.700
+
+Saldo disponível total = R$ 14.700
+```
+
+### Validar também
+
+- recebimento + estorno;
+- gasto + estorno;
+- fatura + estorno;
+- dívida + estorno;
+- transferência + estorno;
+- saldo negativo;
+- conciliação;
+- mês seguinte;
+- ocultação de valores;
+- tema claro/escuro;
+- tooltips;
+- extrato;
+- Dashboard.
+
+### Critérios de aceite
+
+- [ ] Valores centavo a centavo.
+- [ ] Nenhuma dupla contagem.
+- [ ] Estornos restauram estado.
+- [ ] Ledger explica saldos.
+- [ ] Dashboard bate com Contas.
+- [ ] Projeção bate.
+- [ ] Tema claro validado.
+- [ ] Tema escuro validado.
+- [ ] Privacidade validada.
+- [ ] `npm test`.
+- [ ] `npm run typecheck`.
+- [ ] `npm run lint`.
+- [ ] `npm run build`.
+
+### Notas de implementação
+
+```text
+Cenários:
+-
+
+Problemas:
+-
+
+Correções:
+-
+```
+
+---
+
+# FASE 16 — PREPARAÇÃO PARA OBJETIVOS FINANCEIROS
+
+## ETAPA 33 — Preparar integração futura com Objetivos
+
+**Status:** [ ]  
+**Prioridade:** P1
+
+### Preparar somente infraestrutura
+
+```text
+goal_contribution
+goal_withdrawal
+relatedEntityType = goal
+```
+
+### Futuro
+
+Aporte:
+
+```text
+Conta -R$ 1.000
+Objetivo +R$ 1.000
+```
+
+Resgate:
+
+```text
+Objetivo -R$ 500
+Conta +R$ 500
+```
+
+Não vira receita/despesa global.
+
+### Não implementar nesta etapa
+
+- tela de objetivos;
+- metas;
+- prazos;
+- rendimento;
+- projeção adaptativa;
+- redistribuição.
+
+### Critérios de aceite
+
+- [ ] Ledger preparado.
+- [ ] Neutralidade documentada.
+- [ ] Nenhum objetivo implementado antecipadamente.
+
+### Notas de implementação
+
+```text
+Preparação:
+-
+
+Arquivos:
+-
+```
+
+---
+
+# HISTÓRICO DE EXECUÇÃO
+
+| Data | Etapa | Status | Resumo | Arquivos |
+|---|---|---|---|---|
+| 2026-08-31 | Etapa 01 — Criar o modelo de movimentações bancárias | Concluído | Criados types do ledger, suporte opcional em AppData, migration e persistência sem alterar cálculos financeiros. | `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/storage.ts`, `src/lib/supabaseClient.ts`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 02 — Formalizar saldo inicial por conta | Concluído | Contas existentes e novas passaram a ter origem contábil `initial_balance`, preservando `BankAccount.balance`. | `src/lib/storage.ts`, `src/store/DataContext.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 03 — Criar funções centrais do ledger | Concluído | Criadas funções centrais de consulta, soma, saldo, reversão e deduplicação. | `src/lib/finance/accountTransactionRules.ts`, `src/lib/finance/index.ts`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 04 — Calcular saldo por ledger | Concluído | Saldo reconstruível por conta e agregado, com comparação contra saldo armazenado. | `src/lib/finance/accountTransactionRules.ts`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 05 — Criar conciliação de saldo | Concluído | Conciliação com saldo real, ledger, diferença, ajuste manual e snapshot. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ContasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 06 — Vincular receita à conta destino | Concluído | Receita ganhou conta destino opcional e tratamento de conta removida. | `src/lib/types.ts`, `src/lib/storage.ts`, `src/lib/finance/dataQualityRules.ts`, `src/pages/ReceitasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 07 — Criar recebimento mensal de receita | Concluído | Criado IncomeReceipt mensal com movimentação, conta, data, valor e saldo atualizado. | `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/storage.ts`, `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ReceitasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 08 — Permitir desfazer recebimento | Concluído | Recebimento pode ser estornado preservando histórico e saldo. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ReceitasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 09 — Vincular pagamento de gasto à conta | Concluído | Criado ExpensePayment mensal com conta, data, valor, transação e compatibilidade com paidMonths. | `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/storage.ts`, `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/GastosPage.tsx`, `src/pages/PlanejamentoPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 10 — Estornar pagamento de gasto | Concluído | Pagamento de gasto pode ser revertido, devolvendo saldo e preservando histórico. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/GastosPage.tsx`, `src/pages/PlanejamentoPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 12 — Criar página de detalhe da conta | Concluído | Criada navegação `/contas/:accountId`, detalhe dedicado com dados, saldo, ledger, conciliação, edição contextual e ações internas de excluir/atualizar saldo; lista ficou apenas como abertura de conta. | `src/App.tsx`, `src/pages/ContasPage.tsx` |
+| 2026-08-31 | Etapa 13 — Criar extrato dentro da página da conta | Concluído | Adicionado extrato na página da conta com ordem cronológica, filtros, origem relacionada, estornos, contraparte de transferência e saldo após movimentação. | `src/pages/ContasPage.tsx` |
+
+---
+
+# FORMATO DE RESPOSTA OBRIGATÓRIO
+
+```text
+✅ Etapa XX — <nome> concluída.
+
+Implementado:
+- ...
+- ...
+
+Compatibilidade:
+- ...
+
+Validação financeira:
+- ...
+
+Validado:
+- npm test
+- npm run typecheck
+- npm run lint
+- npm run build
+- validação manual
+- tema claro/escuro quando aplicável
+
+Notas registradas em PLANO_FLUXO_CAIXA_CONTAS_NEXO.md.
+
+Aguardando autorização para iniciar a Etapa XX+1.
+```
+
+Se houver bloqueio:
+
+```text
+⚠️ Etapa XX bloqueada.
+
+Motivo:
+...
+
+Impacto:
+...
+
+Decisão necessária:
+...
+
+Nenhuma etapa seguinte foi iniciada.
+```
+
+---
+
+# REGRA FINAL
+
+O objetivo deste plano é permitir que o NEXO responda de forma confiável:
+
+```text
+Quanto dinheiro tenho?
+Em qual conta?
+De onde veio?
+Para onde foi?
+O que ainda vai entrar?
+O que ainda precisa sair?
+Alguma conta ficará negativa?
+Preciso transferir dinheiro?
+```
+
+A área de Contas deve funcionar como uma experiência bancária:
+
+```text
+Conta
+→ dados
+→ saldo
+→ extrato
+```
+
+sem transformar o NEXO em sistema contábil complexo.
+
+Prioridades finais:
+
+1. integridade financeira;
+2. saldo explicável;
+3. operações reversíveis;
+4. privacidade;
+5. clareza;
+6. consistência visual em claro/escuro.
+
+Somente após conclusão e auditoria deste plano deve começar o módulo completo de Objetivos Financeiros.
