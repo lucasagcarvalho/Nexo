@@ -1,12 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Plus, Edit2, Trash2, Copy, Power, TrendingUp, Repeat, Calendar, CalendarRange, AlertCircle, CheckCircle2, Undo2 } from 'lucide-react';
 import { useData, getActiveVigencia, applyVigenciaChange, applyMonthOverride } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { formatCurrency, formatMonthBR, currentMonthKey, uid, compareMonths } from '@/lib/format';
+import { formatBankAccountLabel } from '@/lib/finance/accountRules';
 import type { Income, IncomeType, IncomeKind, Person } from '@/lib/types';
 import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, CurrencyInput, MonthPicker, PersonSelect, IconButton } from '@/components/ui';
 
 type ModalMode = 'add' | 'edit';
+type IncomeVisibilityFilter = 'active' | 'inactive' | 'all';
 
 const KIND_LABELS: Record<IncomeKind, string> = {
   fixa: 'Fixa',
@@ -33,6 +35,7 @@ export function ReceitasPage() {
   const [editing, setEditing] = useState<Income | null>(null);
   const [receiving, setReceiving] = useState<Income | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [visibilityFilter, setVisibilityFilter] = useState<IncomeVisibilityFilter>('active');
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [receiptForm, setReceiptForm] = useState({
@@ -46,7 +49,7 @@ export function ReceitasPage() {
     { value: '', label: 'Sem conta definida' },
     ...data.bankAccounts.map((account) => ({
       value: account.id,
-      label: `${account.name} · ${account.bank}`,
+      label: formatBankAccountLabel(account),
     })),
   ], [data.bankAccounts]);
 
@@ -184,18 +187,31 @@ export function ReceitasPage() {
     setModalMode(null);
   };
 
-  // Filter incomes for the selected month
-  const monthIncomes = useMemo(() => {
+  const incomeBelongsToSelectedMonth = useCallback((inc: Income): boolean => {
+    if (inc.kind === 'variavel') {
+      return inc.competenceMonth === selectedMonth;
+    }
+    return getActiveVigencia(inc.vigencias, selectedMonth) !== null;
+  }, [selectedMonth]);
+
+  // Active incomes drive financial totals; inactive ones are visible only for management.
+  const activeMonthIncomes = useMemo(() => {
     return data.incomes.filter((inc) => {
       if (!inc.active) return false;
-      if (inc.kind === 'variavel') {
-        return inc.competenceMonth === selectedMonth;
-      }
-      return getActiveVigencia(inc.vigencias, selectedMonth) !== null;
+      return incomeBelongsToSelectedMonth(inc);
     });
-  }, [data.incomes, selectedMonth]);
+  }, [data.incomes, incomeBelongsToSelectedMonth]);
 
-  const total = monthIncomes.reduce((s, i) => {
+  const visibleMonthIncomes = useMemo(() => {
+    return data.incomes.filter((inc) => {
+      if (!incomeBelongsToSelectedMonth(inc)) return false;
+      if (visibilityFilter === 'active') return inc.active;
+      if (visibilityFilter === 'inactive') return !inc.active;
+      return true;
+    });
+  }, [data.incomes, incomeBelongsToSelectedMonth, visibilityFilter]);
+
+  const total = activeMonthIncomes.reduce((s, i) => {
     const vig = getActiveVigencia(i.vigencias, selectedMonth);
     return s + (vig?.amount ?? 0);
   }, 0);
@@ -237,23 +253,24 @@ export function ReceitasPage() {
   };
 
   const getKindDescription = (inc: Income): string => {
+    const status = inc.active ? 'Ativa' : 'Inativa';
     if (inc.kind === 'fixa') {
-      return `Fixa · ${formatCurrency(getAmount(inc))} · Ativa`;
+      return `Fixa · ${formatCurrency(getAmount(inc))} · ${status}`;
     }
     if (inc.kind === 'variavel') {
-      return `Variável · ${formatCurrency(getAmount(inc))} · ${formatMonthBR(inc.competenceMonth ?? selectedMonth)}`;
+      return `Variável · ${formatCurrency(getAmount(inc))} · ${formatMonthBR(inc.competenceMonth ?? selectedMonth)} · ${status}`;
     }
     // determinada
     const vig = getActiveVigencia(inc.vigencias, selectedMonth);
     const start = vig?.startDate ?? inc.vigencias[0]?.startDate ?? selectedMonth;
     const end = vig?.endDate ?? '';
-    return `Determinada · ${formatCurrency(getAmount(inc))} · ${formatMonthBR(start)} até ${formatMonthBR(end)}`;
+    return `Determinada · ${formatCurrency(getAmount(inc))} · ${formatMonthBR(start)} até ${formatMonthBR(end)} · ${status}`;
   };
 
   const getAccountLabel = (accountId?: string | null): string => {
     if (!accountId) return 'Sem conta definida';
     const account = data.bankAccounts.find((item) => item.id === accountId);
-    return account ? `${account.name} · ${account.bank}` : 'Conta removida';
+    return account ? formatBankAccountLabel(account) : 'Conta removida';
   };
 
   return (
@@ -270,37 +287,59 @@ export function ReceitasPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Card className="p-4">
           <div className="flex items-center gap-2 mb-1"><Repeat size={16} className="text-blue-500" /><p className="text-xs text-gray-400">Fixas</p></div>
-          <p className="text-xl font-bold text-blue-600">{formatCurrency(monthIncomes.filter((i) => i.kind === 'fixa').reduce((s, i) => s + getAmount(i), 0))}</p>
+          <p className="text-xl font-bold text-blue-600">{formatCurrency(activeMonthIncomes.filter((i) => i.kind === 'fixa').reduce((s, i) => s + getAmount(i), 0))}</p>
         </Card>
         <Card className="p-4">
           <div className="flex items-center gap-2 mb-1"><Calendar size={16} className="text-amber-500" /><p className="text-xs text-gray-400">Variáveis</p></div>
-          <p className="text-xl font-bold text-amber-600">{formatCurrency(monthIncomes.filter((i) => i.kind === 'variavel').reduce((s, i) => s + getAmount(i), 0))}</p>
+          <p className="text-xl font-bold text-amber-600">{formatCurrency(activeMonthIncomes.filter((i) => i.kind === 'variavel').reduce((s, i) => s + getAmount(i), 0))}</p>
         </Card>
         <Card className="p-4">
           <div className="flex items-center gap-2 mb-1"><CalendarRange size={16} className="text-purple-500" /><p className="text-xs text-gray-400">Determinadas</p></div>
-          <p className="text-xl font-bold text-purple-600">{formatCurrency(monthIncomes.filter((i) => i.kind === 'determinada').reduce((s, i) => s + getAmount(i), 0))}</p>
+          <p className="text-xl font-bold text-purple-600">{formatCurrency(activeMonthIncomes.filter((i) => i.kind === 'determinada').reduce((s, i) => s + getAmount(i), 0))}</p>
         </Card>
       </div>
 
       {/* Unified list */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Receitas de {formatMonthBR(selectedMonth)}</h2>
-        {monthIncomes.length === 0 ? (
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">Receitas de {formatMonthBR(selectedMonth)}</h2>
+          <div className="inline-flex rounded-lg bg-gray-100 p-1">
+            {([
+              ['active', 'Ativas'],
+              ['inactive', 'Inativas'],
+              ['all', 'Todas'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setVisibilityFilter(value)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  visibilityFilter === value
+                    ? 'bg-white text-blue-700 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {visibleMonthIncomes.length === 0 ? (
           <Card className="p-8">
             <EmptyState
               icon={<TrendingUp size={48} />}
-              title={`Nenhuma receita em ${formatMonthBR(selectedMonth)}`}
-              message="Adicione receitas fixas, variáveis ou determinadas para este mês."
-              action={<Button onClick={openAdd}><Plus size={16} className="inline mr-1" /> Adicionar receita</Button>}
+              title={visibilityFilter === 'inactive' ? `Nenhuma receita inativa em ${formatMonthBR(selectedMonth)}` : `Nenhuma receita em ${formatMonthBR(selectedMonth)}`}
+              message={visibilityFilter === 'inactive' ? 'Receitas desativadas aparecerão aqui para serem reativadas.' : 'Adicione receitas fixas, variáveis ou determinadas para este mês.'}
+              action={visibilityFilter === 'inactive' ? undefined : <Button onClick={openAdd}><Plus size={16} className="inline mr-1" /> Adicionar receita</Button>}
             />
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {monthIncomes.map((inc) => {
+            {visibleMonthIncomes.map((inc) => {
               const KindIcon = KIND_ICONS[inc.kind];
               const isReceived = isIncomeReceivedForMonth(inc.id, selectedMonth);
               return (
-                <Card key={inc.id} className="p-4">
+                <Card key={inc.id} className={`p-4 ${inc.active ? '' : 'bg-gray-50'}`}>
                   <div className="flex items-start justify-between mb-2">
                     <div className="min-w-0 flex-1">
                       <h3 className="font-semibold text-gray-900 truncate">{inc.name}</h3>
@@ -309,6 +348,7 @@ export function ReceitasPage() {
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <Badge color={KIND_BADGE_COLORS[inc.kind]}>{KIND_LABELS[inc.kind]}</Badge>
+                      {!inc.active && <Badge color="gray">Inativa</Badge>}
                       {isReceived && <Badge color="green">Recebida</Badge>}
                     </div>
                   </div>
@@ -319,11 +359,13 @@ export function ReceitasPage() {
                   </div>
                   {inc.note && <p className="text-xs text-gray-500 mb-3 italic">{inc.note}</p>}
                   <div className="flex gap-1">
-                    <IconButton
-                      icon={isReceived ? <Undo2 size={14} /> : <CheckCircle2 size={14} />}
-                      label={isReceived ? 'Desfazer recebimento' : 'Receber receita'}
-                      onClick={() => (isReceived ? undoIncomeReceipt(inc.id, selectedMonth) : openReceive(inc))}
-                    />
+                    {inc.active && (
+                      <IconButton
+                        icon={isReceived ? <Undo2 size={14} /> : <CheckCircle2 size={14} />}
+                        label={isReceived ? 'Desfazer recebimento' : 'Receber receita'}
+                        onClick={() => (isReceived ? undoIncomeReceipt(inc.id, selectedMonth) : openReceive(inc))}
+                      />
+                    )}
                     <IconButton icon={<Edit2 size={14} />} label="Editar receita" onClick={() => openEdit(inc)} />
                     <IconButton icon={<Copy size={14} />} label="Duplicar receita" onClick={() => duplicateIncome(inc.id)} />
                     <IconButton icon={<Power size={14} />} label={inc.active ? 'Desativar receita' : 'Ativar receita'} onClick={() => toggleIncome(inc.id)} />
