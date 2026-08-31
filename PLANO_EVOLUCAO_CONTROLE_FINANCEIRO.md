@@ -1154,7 +1154,7 @@ Testes:
 
 ## ETAPA 12 — Criar tooltips para conceitos financeiros
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -1185,23 +1185,36 @@ Valor disponível atualmente nas contas cadastradas.
 
 ### Critérios de aceite
 
-- [ ] Conceitos ambíguos possuem ajuda.
-- [ ] Tooltip não aparece automaticamente.
-- [ ] Funciona com mouse e teclado.
-- [ ] Acessível.
-- [ ] Textos não contradizem regras financeiras.
+- [x] Conceitos ambíguos possuem ajuda.
+- [x] Tooltip não aparece automaticamente.
+- [x] Funciona com mouse e teclado.
+- [x] Acessível.
+- [x] Textos não contradizem regras financeiras.
 
 ### Notas de implementação
 
 ```text
 Tooltips:
--
+- Cards principais: Entradas, Saídas, A pagar e Saldo do mês.
+- Cartões: fatura do mês, meta, % da renda e parcelas futuras.
+- Próximos meses: meses negativos, menor saldo previsto e maior comprometimento.
+- Textos mantidos curtos e com quebra automática.
 
 Componente reutilizável:
--
+- `Tooltip` ganhou `role="tooltip"` e `aria-describedby`.
+- Tooltip continua aparecendo somente por hover/foco, com atraso.
+- Tooltip mantém largura máxima responsiva e quebra de linha para evitar corte lateral.
+- `MetricItem` passou a aceitar `tooltip` opcional.
 
 Arquivos:
--
+- src/components/ui.tsx
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1783,6 +1796,7 @@ Adicionar uma linha sempre que uma etapa for concluída.
 | 2026-08-29 | Etapa 09 — Substituir donut de categorias por ranking simples | Concluído | Home ganhou ranking Top 5 de categorias com valor, percentual, barras horizontais, drill-down por categoria e modal "Ver todos". | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 10 — Reorganizar ordem final do Dashboard | Concluído | Dashboard reorganizado na hierarquia final com resumo do mês, alertas no topo, Cartões + Próximos meses, ranking + saúde financeira e gráfico principal. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 11 — Criar textos contextuais curtos | Concluído | Cards principais, Cartões e Próximos meses receberam frases curtas de contexto sem expor fórmulas na Home. | src/pages/DashboardPage.tsx |
+| 2026-08-29 | Etapa 12 — Criar tooltips para conceitos financeiros | Concluído | Tooltips financeiros foram padronizados com textos curtos, quebra de linha, limite responsivo, suporte a foco e semântica acessível. | src/components/ui.tsx, src/pages/DashboardPage.tsx |
 
 ---
 
