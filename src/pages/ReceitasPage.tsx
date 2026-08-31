@@ -36,6 +36,13 @@ export function ReceitasPage() {
   const [newTypeName, setNewTypeName] = useState('');
 
   const incomeTypeOptions = useMemo(() => [...data.incomeTypes], [data.incomeTypes]);
+  const accountOptions = useMemo(() => [
+    { value: '', label: 'Sem conta definida' },
+    ...data.bankAccounts.map((account) => ({
+      value: account.id,
+      label: `${account.name} · ${account.bank}`,
+    })),
+  ], [data.bankAccounts]);
 
   const [form, setForm] = useState({
     name: '',
@@ -44,6 +51,7 @@ export function ReceitasPage() {
     kind: 'fixa' as IncomeKind,
     person: 'Lucas' as Person,
     dueDay: 5,
+    defaultAccountId: '',
     startDate: currentMonthKey(),
     endDate: '',
     competenceMonth: currentMonthKey(),
@@ -56,6 +64,7 @@ export function ReceitasPage() {
     setForm({
       name: '', amount: 0, type: data.incomeTypes[0] ?? 'Salário', kind: 'fixa',
       person: data.people[0]?.name ?? 'Lucas', dueDay: 5,
+      defaultAccountId: '',
       startDate: selectedMonth, endDate: '', competenceMonth: selectedMonth,
       note: '', editMode: 'future', changeMonth: selectedMonth,
     });
@@ -76,6 +85,7 @@ export function ReceitasPage() {
     setForm({
       name: inc.name, amount, type: inc.type, kind: inc.kind, person: inc.person,
       dueDay: inc.dueDay,
+      defaultAccountId: inc.defaultAccountId ?? '',
       startDate: inc.kind === 'variavel'
         ? (inc.competenceMonth ?? selectedMonth)
         : (vig?.startDate ?? inc.vigencias[0]?.startDate ?? selectedMonth),
@@ -105,14 +115,16 @@ export function ReceitasPage() {
       if (form.kind === 'fixa') {
         addIncome({
           name: form.name, type: form.type, kind: 'fixa', person: form.person,
-          dueDay: form.dueDay, note: form.note || undefined, active: true,
+          dueDay: form.dueDay, defaultAccountId: form.defaultAccountId || null,
+          note: form.note || undefined, active: true,
           vigencias: [{ id: uid(), amount: form.amount, startDate: form.startDate, endDate: null }],
           status: 'previsto',
         });
       } else if (form.kind === 'variavel') {
         addIncome({
           name: form.name, type: form.type, kind: 'variavel', person: form.person,
-          dueDay: form.dueDay, note: form.note || undefined, active: true,
+          dueDay: form.dueDay, defaultAccountId: form.defaultAccountId || null,
+          note: form.note || undefined, active: true,
           vigencias: [{ id: uid(), amount: form.amount, startDate: form.competenceMonth, endDate: form.competenceMonth }],
           status: 'previsto',
           competenceMonth: form.competenceMonth,
@@ -120,7 +132,8 @@ export function ReceitasPage() {
       } else if (form.kind === 'determinada') {
         addIncome({
           name: form.name, type: form.type, kind: 'determinada', person: form.person,
-          dueDay: form.dueDay, note: form.note || undefined, active: true,
+          dueDay: form.dueDay, defaultAccountId: form.defaultAccountId || null,
+          note: form.note || undefined, active: true,
           vigencias: [{ id: uid(), amount: form.amount, startDate: form.startDate, endDate: form.endDate || form.startDate }],
           status: 'previsto',
         });
@@ -129,14 +142,16 @@ export function ReceitasPage() {
       if (form.kind === 'variavel') {
         updateIncome(editing.id, {
           name: form.name, type: form.type, person: form.person,
-          dueDay: form.dueDay, note: form.note || undefined,
+          dueDay: form.dueDay, defaultAccountId: form.defaultAccountId || null,
+          note: form.note || undefined,
           vigencias: [{ id: uid(), amount: form.amount, startDate: form.competenceMonth, endDate: form.competenceMonth }],
           competenceMonth: form.competenceMonth,
         });
       } else if (form.kind === 'determinada') {
         updateIncome(editing.id, {
           name: form.name, type: form.type, person: form.person,
-          dueDay: form.dueDay, note: form.note || undefined,
+          dueDay: form.dueDay, defaultAccountId: form.defaultAccountId || null,
+          note: form.note || undefined,
           vigencias: [{ id: uid(), amount: form.amount, startDate: form.startDate, endDate: form.endDate || form.startDate }],
         });
       } else {
@@ -145,14 +160,16 @@ export function ReceitasPage() {
           const newVigencias = applyVigenciaChange(editing.vigencias, form.changeMonth, form.amount);
           updateIncome(editing.id, {
             name: form.name, type: form.type, person: form.person,
-            dueDay: form.dueDay, note: form.note || undefined,
+            dueDay: form.dueDay, defaultAccountId: form.defaultAccountId || null,
+            note: form.note || undefined,
             vigencias: newVigencias,
           });
         } else {
           const newVigencias = applyMonthOverride(editing.vigencias, selectedMonth, form.amount);
           updateIncome(editing.id, {
             name: form.name, type: form.type, person: form.person,
-            dueDay: form.dueDay, note: form.note || undefined,
+            dueDay: form.dueDay, defaultAccountId: form.defaultAccountId || null,
+            note: form.note || undefined,
             vigencias: newVigencias,
           });
         }
@@ -194,6 +211,12 @@ export function ReceitasPage() {
     const start = vig?.startDate ?? inc.vigencias[0]?.startDate ?? selectedMonth;
     const end = vig?.endDate ?? '';
     return `Determinada · ${formatCurrency(getAmount(inc))} · ${formatMonthBR(start)} até ${formatMonthBR(end)}`;
+  };
+
+  const getAccountLabel = (accountId?: string | null): string => {
+    if (!accountId) return 'Sem conta definida';
+    const account = data.bankAccounts.find((item) => item.id === accountId);
+    return account ? `${account.name} · ${account.bank}` : 'Conta removida';
   };
 
   return (
@@ -244,6 +267,7 @@ export function ReceitasPage() {
                     <div className="min-w-0 flex-1">
                       <h3 className="font-semibold text-gray-900 truncate">{inc.name}</h3>
                       <p className="text-xs text-gray-400">{inc.type} · {inc.person} · Dia {inc.dueDay}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Conta destino: {getAccountLabel(inc.defaultAccountId)}</p>
                     </div>
                     <Badge color={KIND_BADGE_COLORS[inc.kind]}>{KIND_LABELS[inc.kind]}</Badge>
                   </div>
@@ -349,6 +373,7 @@ export function ReceitasPage() {
             <PersonSelect label="Pessoa" value={form.person} onChange={(v) => setForm({ ...form, person: v })} people={data.people} onAddPerson={addPerson} required />
             <Input label="Dia de recebimento" type="number" value={form.dueDay} onChange={(v) => setForm({ ...form, dueDay: parseInt(v) || 1 })} />
           </div>
+          <Select label="Conta destino" value={form.defaultAccountId} onChange={(v) => setForm({ ...form, defaultAccountId: v })} options={accountOptions} />
 
           {/* Kind-specific fields */}
           {form.kind === 'fixa' && (

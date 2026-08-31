@@ -1,9 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import type { AppData, Income, Expense, CreditCard, CardPurchase, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
+import type { AccountTransaction, AppData, Income, Expense, CreditCard, CardPurchase, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
 import { loadLocalData, saveLocalData, loadRemoteData, saveRemoteData, resetData, migrateData } from '@/lib/storage';
 import { defaultCategoryClass } from '@/lib/seed';
 import { uid, currentMonthKey, addMonths, compareMonths } from '@/lib/format';
 import { getActiveVigencia as getFinanceActiveVigencia, invoiceStatusKey, isExpensePaidForMonth as getFinanceExpensePaidForMonth } from '@/lib/projection';
+import { calculateAccountLedgerBalance, createManualAdjustmentTransaction } from '@/lib/finance/accountTransactionRules';
 import { useAuth } from '@/store/AuthContext';
 
 interface DataContextValue {
@@ -63,6 +64,7 @@ interface DataContextValue {
   addBankAccount: (account: Omit<BankAccount, 'id'>) => void;
   updateBankAccount: (id: string, updates: Partial<BankAccount>) => void;
   deleteBankAccount: (id: string) => void;
+  reconcileBankAccountBalance: (accountId: string, realBalance: number, date: string, note?: string) => void;
   // Bank balance snapshots
   addBalanceSnapshot: (snapshot: Omit<BankBalanceSnapshot, 'id'>) => void;
   // People
@@ -462,7 +464,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const addBankAccount = useCallback((account: Omit<BankAccount, 'id'>) => {
     const newAccount: BankAccount = { ...account, id: uid() };
-    setData((prev) => ({ ...prev, bankAccounts: [...prev.bankAccounts, newAccount] }));
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const initialTransaction: AccountTransaction = {
+      id: `initial-balance-${newAccount.id}`,
+      accountId: newAccount.id,
+      date,
+      monthKey: date.slice(0, 7),
+      amount: Number.isFinite(newAccount.balance) ? newAccount.balance : 0,
+      kind: 'initial_balance',
+      note: 'Saldo inicial informado no cadastro da conta.',
+      createdAt: now.toISOString(),
+    };
+    setData((prev) => ({
+      ...prev,
+      bankAccounts: [...prev.bankAccounts, newAccount],
+      accountTransactions: [...(prev.accountTransactions ?? []), initialTransaction],
+    }));
     addHistory('criação', 'conta', `Conta "${account.name}" criada.`);
   }, [addHistory]);
 
@@ -479,9 +497,50 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ...prev,
       bankAccounts: prev.bankAccounts.filter((a) => a.id !== id),
       bankBalanceSnapshots: prev.bankBalanceSnapshots.filter((s) => s.accountId !== id),
+      accountTransactions: (prev.accountTransactions ?? []).filter((t) => t.accountId !== id),
     }));
     if (acc) addHistory('exclusão', 'conta', `Conta "${acc.name}" excluída.`);
   }, [data.bankAccounts, addHistory]);
+
+  const reconcileBankAccountBalance = useCallback((accountId: string, realBalance: number, date: string, note?: string) => {
+    let accountName = '';
+    let adjustmentAmount = 0;
+    setData((prev) => {
+      const account = prev.bankAccounts.find((item) => item.id === accountId);
+      if (!account) return prev;
+      accountName = account.name;
+      const ledgerBalance = calculateAccountLedgerBalance(prev, accountId, date);
+      adjustmentAmount = Math.round((realBalance - ledgerBalance) * 100) / 100;
+      const monthKey = date.slice(0, 7);
+      const snapshot: BankBalanceSnapshot = {
+        id: uid(),
+        accountId,
+        balance: realBalance,
+        date,
+        monthKey,
+      };
+      const adjustment: AccountTransaction | null = createManualAdjustmentTransaction(
+        accountId,
+        adjustmentAmount,
+        date,
+        note || `Conciliação de saldo para ${realBalance.toFixed(2)}.`,
+      );
+
+      return {
+        ...prev,
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === accountId ? { ...item, balance: realBalance } : item
+        )),
+        bankBalanceSnapshots: [...prev.bankBalanceSnapshots, snapshot],
+        accountTransactions: adjustment
+          ? [...(prev.accountTransactions ?? []), adjustment]
+          : (prev.accountTransactions ?? []),
+      };
+    });
+    if (accountName) {
+      addHistory('conciliação', 'conta', `Conta "${accountName}" conciliada com ajuste de R$ ${adjustmentAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
 
   const addBalanceSnapshot = useCallback((snapshot: Omit<BankBalanceSnapshot, 'id'>) => {
     const newSnapshot: BankBalanceSnapshot = { ...snapshot, id: uid() };
@@ -598,7 +657,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addCategoryBudget, updateCategoryBudget, deleteCategoryBudget,
     markPendingAdded, addPendingExpense, deletePendingExpense,
     addHistory,
-    addBankAccount, updateBankAccount, deleteBankAccount,
+    addBankAccount, updateBankAccount, deleteBankAccount, reconcileBankAccountBalance,
     addBalanceSnapshot,
     addPerson, updatePerson, deletePerson, togglePerson,
     addIncomeType,

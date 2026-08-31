@@ -41,6 +41,7 @@ export interface Income {
   kind: IncomeKind;
   person: Person;
   dueDay: number;
+  defaultAccountId?: string | null;
   note?: string;
   active: boolean;
   vigencias: Vigencia[];
@@ -170,6 +171,43 @@ export interface BankBalanceSnapshot {
   monthKey: string; // YYYY-MM
 }
 
+export type AccountTransactionKind =
+  | 'initial_balance'
+  | 'income_receipt'
+  | 'expense_payment'
+  | 'card_invoice_payment'
+  | 'debt_payment'
+  | 'transfer_in'
+  | 'transfer_out'
+  | 'manual_adjustment'
+  | 'reversal'
+  | 'goal_contribution'
+  | 'goal_withdrawal';
+
+export type AccountTransactionRelatedEntityType =
+  | 'income'
+  | 'expense'
+  | 'cardInvoice'
+  | 'debt'
+  | 'transfer'
+  | 'goal';
+
+export interface AccountTransaction {
+  id: string;
+  accountId: string;
+  date: string; // YYYY-MM-DD
+  monthKey: string; // YYYY-MM
+  amount: number;
+  kind: AccountTransactionKind;
+  relatedEntityType?: AccountTransactionRelatedEntityType;
+  relatedEntityId?: string;
+  relatedMonthKey?: string;
+  reversedTransactionId?: string;
+  reversalOfTransactionId?: string;
+  note?: string;
+  createdAt: string;
+}
+
 export interface CategoryEntry {
   id: string;
   name: string;
@@ -201,6 +239,7 @@ export interface AppData {
   categoryEntries: CategoryEntry[];
   bankAccounts: BankAccount[];
   bankBalanceSnapshots: BankBalanceSnapshot[];
+  accountTransactions?: AccountTransaction[];
   people: PersonEntry[];
   incomeTypes: string[];
   categoryBudgets: CategoryBudget[];

@@ -1,20 +1,20 @@
 import { useState, useMemo } from 'react';
 import { Plus, Edit2, Trash2, Building2, ArrowDownCircle, History } from 'lucide-react';
 import { useData } from '@/store/DataContext';
-import { useMonth } from '@/store/MonthContext';
 import { formatCurrency, formatMonthBR, formatDateBR } from '@/lib/format';
+import { calculateAccountLedgerBalance } from '@/lib/finance/accountTransactionRules';
 import type { BankAccount } from '@/lib/types';
 import { Card, Button, Modal, Input, TextArea, ConfirmDialog, EmptyState, CurrencyInput, PersonSelect, IconButton } from '@/components/ui';
 
 export function ContasPage() {
-  const { data, addBankAccount, updateBankAccount, deleteBankAccount, addBalanceSnapshot, addPerson } = useData();
-  const { selectedMonth } = useMonth();
+  const { data, addBankAccount, updateBankAccount, deleteBankAccount, reconcileBankAccountBalance, addPerson } = useData();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BankAccount | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [snapshotModal, setSnapshotModal] = useState<BankAccount | null>(null);
   const [historyModal, setHistoryModal] = useState<BankAccount | null>(null);
   const [snapshotAmount, setSnapshotAmount] = useState(0);
+  const [snapshotDate, setSnapshotDate] = useState('');
 
   const [form, setForm] = useState({
     bank: '', name: '', holder: '', balance: 0, note: '',
@@ -47,19 +47,13 @@ export function ContasPage() {
   const openSnapshot = (acc: BankAccount) => {
     setSnapshotModal(acc);
     setSnapshotAmount(acc.balance);
+    const today = new Date();
+    setSnapshotDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
   };
 
   const saveSnapshot = () => {
-    if (!snapshotModal) return;
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    addBalanceSnapshot({
-      accountId: snapshotModal.id,
-      balance: snapshotAmount,
-      date: dateStr,
-      monthKey: selectedMonth,
-    });
-    updateBankAccount(snapshotModal.id, { balance: snapshotAmount });
+    if (!snapshotModal || !snapshotDate) return;
+    reconcileBankAccountBalance(snapshotModal.id, snapshotAmount, snapshotDate, `Conciliação manual de ${formatMonthBR(snapshotDate.slice(0, 7))}.`);
     setSnapshotModal(null);
   };
 
@@ -67,6 +61,11 @@ export function ContasPage() {
     data.bankBalanceSnapshots
       .filter((s) => s.accountId === accountId)
       .sort((a, b) => b.date.localeCompare(a.date));
+
+  const snapshotLedgerBalance = snapshotModal && snapshotDate
+    ? calculateAccountLedgerBalance(data, snapshotModal.id, snapshotDate)
+    : 0;
+  const snapshotDifference = Math.round((snapshotAmount - snapshotLedgerBalance) * 100) / 100;
 
   return (
     <div className="space-y-6">
@@ -110,6 +109,7 @@ export function ContasPage() {
               <div className="mb-3">
                 <p className="text-xs text-gray-400">Saldo atual</p>
                 <p className={`text-2xl font-bold ${acc.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(acc.balance)}</p>
+                <p className="text-xs text-gray-400 mt-1">Ledger: {formatCurrency(calculateAccountLedgerBalance(data, acc.id))}</p>
               </div>
               {acc.note && <p className="text-xs text-gray-500 mb-3 italic">{acc.note}</p>}
               <div className="flex gap-2">
@@ -144,17 +144,32 @@ export function ContasPage() {
         </form>
       </Modal>
 
-      {/* Snapshot modal */}
-      <Modal open={!!snapshotModal} onClose={() => setSnapshotModal(null)} title="Atualizar saldo" size="sm" footer={
+      {/* Reconciliation modal */}
+      <Modal open={!!snapshotModal} onClose={() => setSnapshotModal(null)} title="Conciliar saldo" size="sm" footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setSnapshotModal(null)}>Cancelar</Button>
-          <Button onClick={saveSnapshot}>Salvar</Button>
+          <Button onClick={saveSnapshot} disabled={!snapshotDate}>Confirmar ajuste</Button>
         </div>
       }>
         {snapshotModal && (
           <form onSubmit={(e) => { e.preventDefault(); saveSnapshot(); }} className="space-y-3">
-            <p className="text-sm text-gray-600">Regist o saldo de <strong>{snapshotModal.name}</strong> para {formatMonthBR(selectedMonth)}.</p>
-            <CurrencyInput label="Saldo" value={snapshotAmount} onChange={setSnapshotAmount} allowNegative required />
+            <p className="text-sm text-gray-600">Confira o saldo de <strong>{snapshotModal.name}</strong> antes de confirmar.</p>
+            <Input label="Data da conciliação" type="date" value={snapshotDate} onChange={setSnapshotDate} required />
+            <CurrencyInput label="Saldo real informado" value={snapshotAmount} onChange={setSnapshotAmount} allowNegative required />
+            <div className="space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Saldo calculado</span>
+                <span className="font-medium text-gray-800">{formatCurrency(snapshotLedgerBalance)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Saldo informado</span>
+                <span className="font-medium text-gray-800">{formatCurrency(snapshotAmount)}</span>
+              </div>
+              <div className="flex justify-between gap-3 border-t border-gray-200 pt-2">
+                <span className="font-semibold text-gray-700">Ajuste manual</span>
+                <span className={`font-bold ${snapshotDifference >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(snapshotDifference)}</span>
+              </div>
+            </div>
             <button type="submit" className="hidden" aria-hidden="true" />
           </form>
         )}

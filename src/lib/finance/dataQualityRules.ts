@@ -66,6 +66,9 @@ export function getDataQualityIssues(data: AppData): DataQualityIssue[] {
     if (hasMissingPerson(data, income.person)) {
       issues.push(issue('warning', 'receita', income.id, `Receita "${income.name}" referencia pessoa removida.`, 'Selecione uma pessoa cadastrada para esta receita.'));
     }
+    if (income.defaultAccountId && !accountIds.has(income.defaultAccountId)) {
+      issues.push(issue('warning', 'receita', income.id, `Receita "${income.name}" referencia conta removida.`, 'Selecione uma conta cadastrada ou deixe a conta destino em branco.'));
+    }
   }
 
   for (const expense of data.expenses) {

@@ -1,11 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedData } from '../src/lib/seed';
+import { migrateData } from '../src/lib/storage';
 import type { AppData, CardPurchase, CreditCard, Debt, Expense, Income } from '../src/lib/types';
 import { addMonths, currentMonthKey } from '../src/lib/format';
 import {
   cardInvoiceDetail,
+  calculateAccountLedgerBalance,
+  calculateTotalLedgerBalance,
+  createManualAdjustmentTransaction,
+  createReversalTransaction,
   getCardCommitmentSummary,
+  getAccountTransactions,
+  getAccountLedgerBalanceComparisons,
+  getAccountLedgerBalanceDifferences,
   getDataQualityIssues,
   getDebtCommitmentSummary,
   getFinancialHealthIndicators,
@@ -21,6 +29,10 @@ import {
   getMonthHealthStatus,
   getMonthlyComparisonSummary,
   getProjectionHorizonSummaries,
+  getTransactionByRelatedEntity,
+  getTransactionsForAccount,
+  getTransactionsForMonth,
+  getTotalLedgerBalanceComparison,
   getActiveVigencia,
   incomeAmountForMonth,
   getMonthlyFinancialSummary,
@@ -29,9 +41,11 @@ import {
   isExpenseActiveInMonth,
   isExpensePaidForMonth,
   isInvoicePaid,
+  isTransactionReversed,
   projectAccountBalance,
   projectMonths,
   purchaseInstallmentStatus,
+  sumTransactionsForAccount,
 } from '../src/lib/finance';
 
 function baseData(): AppData {
@@ -276,6 +290,22 @@ test('resumo mensal centraliza receitas, despesas, cartões e dívidas', () => {
   assert.equal(summary.debtExpenses, 200);
   assert.equal(summary.totalExpenses, 1500);
   assert.equal(summary.balance, 3500);
+});
+
+test('receita com conta destino mantém o cálculo mensal inalterado', () => {
+  const data = baseData();
+  data.bankAccounts = [{ id: 'acc-1', bank: 'Itaú', name: 'Conta Corrente', holder: 'Lucas', balance: 500 }];
+  data.incomes = [income({ defaultAccountId: 'acc-1' })];
+  data.expenses = [];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [];
+
+  const summary = getMonthlyFinancialSummary(data, '2026-08');
+
+  assert.equal(summary.income, 5000);
+  assert.equal(summary.totalExpenses, 0);
+  assert.equal(summary.balance, 5000);
 });
 
 test('resumo mensal diferencia previsto, realizado, pago, pendente e variação', () => {
@@ -762,6 +792,333 @@ test('contas usam snapshot histórico, saldo atual e projeção futura', () => {
   const futureProjection = projectAccountBalance(data, addMonths(currentMonthKey(), 1), 250, 1500);
   assert.equal(futureProjection.accountsBalance, 1500);
   assert.equal(futureProjection.projectedAccountsBalance, 1750);
+});
+
+test('migração cria saldo inicial no ledger sem alterar cálculos existentes', () => {
+  const legacyData = seedData();
+  delete (legacyData as Partial<AppData>).accountTransactions;
+  legacyData.incomes = [income({ defaultAccountId: 'acc-1' })];
+  legacyData.expenses = [expense()];
+  legacyData.bankAccounts = [{ id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: 1000 }];
+
+  const migrated = migrateData(legacyData);
+  const summary = getMonthlyFinancialSummary(migrated, '2026-08');
+  const accountProjection = projectAccountBalance(migrated, currentMonthKey(), 0);
+
+  assert.equal(migrated.accountTransactions?.length, 1);
+  assert.equal(migrated.accountTransactions?.[0].id, 'initial-balance-acc-1');
+  assert.equal(migrated.accountTransactions?.[0].accountId, 'acc-1');
+  assert.equal(migrated.accountTransactions?.[0].kind, 'initial_balance');
+  assert.equal(migrated.accountTransactions?.[0].amount, 1000);
+  assert.equal(migrated.incomes[0].defaultAccountId, 'acc-1');
+  assert.equal(summary.income, 5000);
+  assert.equal(summary.totalExpenses, 100);
+  assert.equal(summary.balance, 4900);
+  assert.equal(accountProjection.accountsBalance, 1000);
+});
+
+test('migração de saldo inicial é idempotente por conta', () => {
+  const legacyData = seedData();
+  legacyData.bankAccounts = [
+    { id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: 1000 },
+    { id: 'acc-2', bank: 'Banco', name: 'Reserva', holder: 'Lucas', balance: 500 },
+  ];
+  delete (legacyData as Partial<AppData>).accountTransactions;
+
+  const firstMigration = migrateData(legacyData);
+  const secondMigration = migrateData(firstMigration);
+
+  assert.equal(firstMigration.accountTransactions?.filter((transaction) => transaction.kind === 'initial_balance').length, 2);
+  assert.equal(secondMigration.accountTransactions?.filter((transaction) => transaction.kind === 'initial_balance').length, 2);
+  assert.deepEqual(
+    secondMigration.accountTransactions?.map((transaction) => [transaction.accountId, transaction.amount]),
+    [['acc-1', 1000], ['acc-2', 500]],
+  );
+});
+
+test('qualidade de dados alerta receita vinculada a conta removida', () => {
+  const data = baseData();
+  data.bankAccounts = [];
+  data.incomes = [income({ id: 'inc-linked', defaultAccountId: 'missing-account' })];
+
+  const issues = getDataQualityIssues(data);
+
+  assert.equal(
+    issues.some((item) => (
+      item.entity === 'receita'
+      && item.recordId === 'inc-linked'
+      && item.title.includes('conta removida')
+    )),
+    true,
+  );
+});
+
+test('ledger central filtra por conta, mês e entidade relacionada com soma segura', () => {
+  const data = baseData();
+  data.accountTransactions = [
+    {
+      id: 'tx-2',
+      accountId: 'acc-1',
+      date: '2026-08-10',
+      monthKey: '2026-08',
+      amount: -300,
+      kind: 'expense_payment',
+      relatedEntityType: 'expense',
+      relatedEntityId: 'energy',
+      relatedMonthKey: '2026-08',
+      createdAt: '2026-08-10T12:00:00.000Z',
+    },
+    {
+      id: 'tx-1',
+      accountId: 'acc-1',
+      date: '2026-08-05',
+      monthKey: '2026-08',
+      amount: 1000,
+      kind: 'income_receipt',
+      relatedEntityType: 'income',
+      relatedEntityId: 'salary',
+      relatedMonthKey: '2026-08',
+      createdAt: '2026-08-05T12:00:00.000Z',
+    },
+    {
+      id: 'bad-nan',
+      accountId: 'acc-1',
+      date: '2026-08-12',
+      monthKey: '2026-08',
+      amount: Number.NaN,
+      kind: 'manual_adjustment',
+      createdAt: '2026-08-12T12:00:00.000Z',
+    },
+    {
+      id: 'bad-inf',
+      accountId: 'acc-1',
+      date: '2026-08-13',
+      monthKey: '2026-08',
+      amount: Number.POSITIVE_INFINITY,
+      kind: 'manual_adjustment',
+      createdAt: '2026-08-13T12:00:00.000Z',
+    },
+    {
+      id: 'tx-3',
+      accountId: 'acc-2',
+      date: '2026-09-01',
+      monthKey: '2026-09',
+      amount: 500,
+      kind: 'transfer_in',
+      relatedEntityType: 'transfer',
+      relatedEntityId: 'transfer-1',
+      createdAt: '2026-09-01T12:00:00.000Z',
+    },
+  ];
+
+  assert.deepEqual(getAccountTransactions(data).map((transaction) => transaction.id), ['tx-1', 'tx-2', 'tx-3']);
+  assert.deepEqual(getTransactionsForAccount(data, 'acc-1').map((transaction) => transaction.id), ['tx-1', 'tx-2']);
+  assert.deepEqual(getTransactionsForMonth(data, '2026-08').map((transaction) => transaction.id), ['tx-1', 'tx-2']);
+  assert.equal(getTransactionByRelatedEntity(data, 'expense', 'energy', '2026-08')?.id, 'tx-2');
+  assert.equal(sumTransactionsForAccount(data, 'acc-1'), 700);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1', '2026-08-05'), 1000);
+});
+
+test('ledger central cria reversão e detecta transação revertida', () => {
+  const data = baseData();
+  const original = {
+    id: 'tx-payment',
+    accountId: 'acc-1',
+    date: '2026-08-10',
+    monthKey: '2026-08',
+    amount: -300,
+    kind: 'expense_payment' as const,
+    relatedEntityType: 'expense' as const,
+    relatedEntityId: 'energy',
+    relatedMonthKey: '2026-08',
+    note: 'Energia',
+    createdAt: '2026-08-10T12:00:00.000Z',
+  };
+  const reversal = createReversalTransaction(original, '2026-08-12');
+  data.accountTransactions = [original, reversal];
+
+  assert.equal(reversal.accountId, original.accountId);
+  assert.equal(reversal.amount, 300);
+  assert.equal(reversal.kind, 'reversal');
+  assert.equal(reversal.reversalOfTransactionId, original.id);
+  assert.equal(isTransactionReversed(data, original.id), true);
+  assert.equal(getTransactionByRelatedEntity(data, 'expense', 'energy', '2026-08'), null);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), 0);
+});
+
+test('ledger central evita duplicidade por id ao somar movimentações', () => {
+  const data = baseData();
+  data.accountTransactions = [
+    {
+      id: 'tx-duplicate',
+      accountId: 'acc-1',
+      date: '2026-08-01',
+      monthKey: '2026-08',
+      amount: 100,
+      kind: 'manual_adjustment',
+      createdAt: '2026-08-01T12:00:00.000Z',
+    },
+    {
+      id: 'tx-duplicate',
+      accountId: 'acc-1',
+      date: '2026-08-01',
+      monthKey: '2026-08',
+      amount: 100,
+      kind: 'manual_adjustment',
+      createdAt: '2026-08-01T12:00:00.000Z',
+    },
+  ];
+
+  assert.equal(getAccountTransactions(data).length, 1);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), 100);
+});
+
+test('saldo por ledger pode ser reconstruído por conta e no total sem alterar fluxo mensal', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: 1700 },
+    { id: 'acc-2', bank: 'Banco', name: 'Reserva', holder: 'Lucas', balance: 300 },
+  ];
+  data.accountTransactions = [
+    {
+      id: 'initial-balance-acc-1',
+      accountId: 'acc-1',
+      date: '2026-08-01',
+      monthKey: '2026-08',
+      amount: 1000,
+      kind: 'initial_balance',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+    {
+      id: 'income-1',
+      accountId: 'acc-1',
+      date: '2026-08-05',
+      monthKey: '2026-08',
+      amount: 1000,
+      kind: 'income_receipt',
+      relatedEntityType: 'income',
+      relatedEntityId: 'salary',
+      relatedMonthKey: '2026-08',
+      createdAt: '2026-08-05T00:00:00.000Z',
+    },
+    {
+      id: 'expense-1',
+      accountId: 'acc-1',
+      date: '2026-08-10',
+      monthKey: '2026-08',
+      amount: -300,
+      kind: 'expense_payment',
+      relatedEntityType: 'expense',
+      relatedEntityId: 'energy',
+      relatedMonthKey: '2026-08',
+      createdAt: '2026-08-10T00:00:00.000Z',
+    },
+    {
+      id: 'initial-balance-acc-2',
+      accountId: 'acc-2',
+      date: '2026-08-01',
+      monthKey: '2026-08',
+      amount: 500,
+      kind: 'initial_balance',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+    {
+      id: 'transfer-out',
+      accountId: 'acc-2',
+      date: '2026-08-12',
+      monthKey: '2026-08',
+      amount: -200,
+      kind: 'transfer_out',
+      relatedEntityType: 'transfer',
+      relatedEntityId: 'transfer-1',
+      createdAt: '2026-08-12T00:00:00.000Z',
+    },
+  ];
+  data.incomes = [income()];
+  data.expenses = [expense()];
+
+  const summary = getMonthlyFinancialSummary(data, '2026-08');
+
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), 1700);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-2'), 300);
+  assert.equal(calculateTotalLedgerBalance(data), 2000);
+  assert.equal(summary.income, 5000);
+  assert.equal(summary.totalExpenses, 100);
+  assert.equal(summary.balance, 4900);
+});
+
+test('diferenças entre saldo armazenado e saldo por ledger são detectáveis', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Banco', name: 'Conta', holder: 'Lucas', balance: 1700 },
+    { id: 'acc-2', bank: 'Banco', name: 'Reserva', holder: 'Lucas', balance: 350 },
+  ];
+  data.accountTransactions = [
+    {
+      id: 'initial-balance-acc-1',
+      accountId: 'acc-1',
+      date: '2026-08-01',
+      monthKey: '2026-08',
+      amount: 1000,
+      kind: 'initial_balance',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+    {
+      id: 'adjustment-acc-1',
+      accountId: 'acc-1',
+      date: '2026-08-02',
+      monthKey: '2026-08',
+      amount: 700,
+      kind: 'manual_adjustment',
+      createdAt: '2026-08-02T00:00:00.000Z',
+    },
+    {
+      id: 'initial-balance-acc-2',
+      accountId: 'acc-2',
+      date: '2026-08-01',
+      monthKey: '2026-08',
+      amount: 300,
+      kind: 'initial_balance',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+  ];
+
+  const comparisons = getAccountLedgerBalanceComparisons(data);
+  const totalComparison = getTotalLedgerBalanceComparison(data);
+  const differences = getAccountLedgerBalanceDifferences(data);
+
+  assert.deepEqual(comparisons.map((comparison) => ({
+    accountId: comparison.accountId,
+    accountBalance: comparison.accountBalance,
+    ledgerBalance: comparison.ledgerBalance,
+    difference: comparison.difference,
+  })), [
+    { accountId: 'acc-1', accountBalance: 1700, ledgerBalance: 1700, difference: 0 },
+    { accountId: 'acc-2', accountBalance: 350, ledgerBalance: 300, difference: 50 },
+  ]);
+  assert.deepEqual(totalComparison, { accountsBalance: 2050, ledgerBalance: 2000, difference: 50 });
+  assert.deepEqual(differences.map((comparison) => comparison.accountId), ['acc-2']);
+});
+
+test('ajuste manual de conciliação cria movimentação válida sem entrar no fluxo mensal', () => {
+  const data = baseData();
+  const adjustment = createManualAdjustmentTransaction('acc-1', 150.129, '2026-08-31', 'Conciliação');
+  data.accountTransactions = adjustment ? [adjustment] : [];
+  data.incomes = [income()];
+  data.expenses = [expense()];
+
+  const summary = getMonthlyFinancialSummary(data, '2026-08');
+
+  assert.equal(adjustment?.accountId, 'acc-1');
+  assert.equal(adjustment?.kind, 'manual_adjustment');
+  assert.equal(adjustment?.monthKey, '2026-08');
+  assert.equal(adjustment?.amount, 150.13);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), 150.13);
+  assert.equal(summary.income, 5000);
+  assert.equal(summary.totalExpenses, 100);
+  assert.equal(summary.balance, 4900);
+  assert.equal(createManualAdjustmentTransaction('acc-1', Number.NaN, '2026-08-31'), null);
+  assert.equal(createManualAdjustmentTransaction('acc-1', 0, '2026-08-31'), null);
 });
 
 test('auditoria controlada mantém Dashboard, Planejamento, Cartões, Projeção, Contas, Alertas e Indicadores coerentes', () => {

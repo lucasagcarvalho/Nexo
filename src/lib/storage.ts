@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { AppData, Income, Expense, Scenario, Vigencia, CategoryEntry } from './types';
+import type { AccountTransaction, AppData, Income, Expense, Scenario, Vigencia, CategoryEntry, BankAccount } from './types';
 import { defaultCategoryClass, seedData } from './seed';
 import { uid, currentMonthKey } from './format';
 import { getSupabase } from './supabaseClient';
@@ -19,6 +19,7 @@ const APP_DATA_KEYS = [
   'categoryEntries',
   'bankAccounts',
   'bankBalanceSnapshots',
+  'accountTransactions',
   'people',
   'incomeTypes',
   'categoryBudgets',
@@ -123,6 +124,7 @@ function migrateIncome(old: any): Income {
       kind: old.kind ?? (old.recurrence === 'unica' ? 'variavel' : 'fixa'),
       person: old.person ?? 'Lucas',
       dueDay: old.dueDay ?? 1,
+      defaultAccountId: old.defaultAccountId ?? null,
       note: old.note,
       active: old.active ?? true,
       vigencias: old.vigencias,
@@ -143,6 +145,7 @@ function migrateIncome(old: any): Income {
     kind: isVariable ? 'variavel' : 'fixa',
     person: old.person ?? 'Lucas',
     dueDay: old.dueDay ?? 1,
+    defaultAccountId: old.defaultAccountId ?? null,
     note: old.note,
     active: old.active ?? true,
     vigencias,
@@ -205,6 +208,43 @@ function migrateExpense(old: any): Expense {
   };
 }
 
+function todayDateKey(): string {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+}
+
+function initialBalanceTransactionId(accountId: string): string {
+  return `initial-balance-${accountId}`;
+}
+
+function ensureInitialBalanceTransactions(accounts: BankAccount[], transactions: AccountTransaction[]): AccountTransaction[] {
+  const next = [...transactions];
+  const initialAccountIds = new Set(
+    next
+      .filter((transaction) => transaction.kind === 'initial_balance')
+      .map((transaction) => transaction.accountId),
+  );
+  const date = todayDateKey();
+  const monthKey = date.slice(0, 7);
+
+  for (const account of accounts) {
+    if (initialAccountIds.has(account.id)) continue;
+    next.push({
+      id: initialBalanceTransactionId(account.id),
+      accountId: account.id,
+      date,
+      monthKey,
+      amount: Number.isFinite(account.balance) ? account.balance : 0,
+      kind: 'initial_balance',
+      note: 'Saldo inicial migrado da conta bancária.',
+      createdAt: new Date().toISOString(),
+    });
+    initialAccountIds.add(account.id);
+  }
+
+  return next;
+}
+
 export function migrateData(data: any): AppData {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('Arquivo de backup inválido.');
@@ -241,6 +281,8 @@ export function migrateData(data: any): AppData {
     }];
   }
   const incomes: Income[] = (data.incomes ?? []).map(migrateIncome);
+  const bankAccounts: BankAccount[] = data.bankAccounts ?? [];
+  const accountTransactions = ensureInitialBalanceTransactions(bankAccounts, data.accountTransactions ?? []);
   const validIncomeIds = new Set(incomes.map((income) => income.id));
   const scenarios: Scenario[] = (data.scenarios ?? []).map((scenario: any) => {
     const incomeOverrides = Object.fromEntries(
@@ -266,8 +308,9 @@ export function migrateData(data: any): AppData {
     settings,
     history: data.history ?? [],
     pendingExpenses: data.pendingExpenses ?? [],
-    bankAccounts: data.bankAccounts ?? [],
+    bankAccounts,
     bankBalanceSnapshots: data.bankBalanceSnapshots ?? [],
+    accountTransactions,
     people: data.people ?? [
       { id: 'p-lucas', name: 'Lucas', active: true },
       { id: 'p-thais', name: 'Thais', active: true },
