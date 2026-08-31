@@ -5,7 +5,7 @@ import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { cardInvoiceDetail, getPlanningMonthDetails, projectMonths, generateAlerts, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
 import { formatCurrency, formatPercent, monthLabelShort, formatMonthBR } from '@/lib/format';
-import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
+import { Card, StatCard, Badge, ProgressBar, Modal } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
 import type { FinancialHealthIndicator } from '@/lib/projection';
 
@@ -282,8 +282,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
   return (
     <div className="space-y-3">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-2">
+      <header className="flex items-start justify-between flex-wrap gap-2">
         <div className="min-w-0">
           <h1 className={dashboardText.pageTitle}>Dashboard</h1>
           <p className={dashboardText.pageSubtitle}>{monthLabelShort(selectedMonth)} · Visão geral financeira</p>
@@ -308,6 +307,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           <button
             type="button"
             onClick={showAlertsDetail}
+            aria-label={`${alertStatusLabel}. Ver todos os alertas`}
             className={`min-w-0 rounded-xl border-2 px-3 py-2 transition-colors hover:bg-white sm:px-4 ${
               alertStatusColor === 'green' ? 'bg-emerald-50 border-emerald-300' :
               alertStatusColor === 'red' ? 'bg-rose-50 border-rose-300' :
@@ -326,17 +326,17 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
             </div>
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Bloco 1: resumo do mês */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-1">
+      <section aria-label="Resumo do mês" className="grid grid-cols-2 xl:grid-cols-4 gap-1">
         <StatCard title="Entradas" value={formatCurrency(current.income)} subtitle={incomeContext} color="blue" icon={<TrendingUp size={18} />} onClick={showIncomeDetail} tooltip="Receitas previstas do mês." />
         <StatCard title="Saídas" value={formatCurrency(current.realizedExpenses)} subtitle={expenseContext} color={current.balance < 0 ? 'red' : 'gray'} icon={<ReceiptText size={18} />} onClick={() => showExpensesDetail('Saídas', 'realized')} tooltip={`Previsto: ${formatCurrency(current.expectedExpenses)}.`} />
         <StatCard title="A pagar" value={formatCurrency(current.unpaidExpenses)} subtitle={`${formatPercent(unpaidPercent)} pendente. ${unpaidContext}`} color={current.unpaidExpenses > 0 ? 'yellow' : 'green'} icon={<Banknote size={18} />} onClick={() => showExpensesDetail('A pagar', 'unpaid')} tooltip="Saídas ainda pendentes." />
         <StatCard title="Saldo do mês" value={formatCurrency(current.balance)} subtitle={balanceContext} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} onClick={showBalanceDetail} tooltip={`Saldo em contas: ${formatCurrency(current.projectedAccountsBalance)}.`} />
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+      <section aria-label="Cartões e próximos meses" className="grid grid-cols-1 xl:grid-cols-2 gap-2">
         {/* Bloco 3: cartões */}
         <Card className="p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -410,9 +410,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           </div>
           <DashboardExpandButton expanded={expandedBlocks.future} onClick={() => toggleBlock('future')} />
         </Card>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+      <section aria-label="Categorias e saúde financeira" className="grid grid-cols-1 xl:grid-cols-2 gap-2">
         <Card className="p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -464,43 +464,36 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
             <DashboardExpandButton expanded={expandedBlocks.health} onClick={() => toggleBlock('health')} />
           )}
         </Card>
-      </div>
+      </section>
 
-      <Card className="p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className={dashboardText.sectionTitle}>Fluxo financeiro dos próximos meses</h3>
-          <DashboardExpandButton expanded={expandedBlocks.chart} onClick={() => toggleBlock('chart')} compact />
-        </div>
-        {expandedBlocks.chart && (
-          <div className="mt-3">
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={flowData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-                <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Line type="monotone" dataKey="Receitas" stroke="#64748B" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="Despesas" stroke="#94A3B8" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="Saldo" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
+      <section aria-labelledby="dashboard-flow-title">
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 id="dashboard-flow-title" className={dashboardText.sectionTitle}>Fluxo financeiro dos próximos meses</h3>
+            <DashboardExpandButton expanded={expandedBlocks.chart} onClick={() => toggleBlock('chart')} compact />
           </div>
-        )}
-      </Card>
-
-      {/* Detail Modal */}
-      {detailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setDetailModal(null)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 sticky top-0 bg-white">
-              <h2 className={`${dashboardText.primaryValue} text-gray-900`}>{detailModal.title}</h2>
-              <button onClick={() => setDetailModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+          {expandedBlocks.chart && (
+            <div className="mt-3">
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={flowData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
+                  <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line type="monotone" dataKey="Receitas" stroke="#64748B" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="Despesas" stroke="#94A3B8" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="Saldo" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
-            <div className="p-4">{detailModal.content}</div>
-          </div>
-        </div>
-      )}
+          )}
+        </Card>
+      </section>
+
+      <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title={detailModal?.title ?? ''}>
+        {detailModal?.content}
+      </Modal>
     </div>
   );
 }
@@ -533,6 +526,7 @@ function DashboardExpandButton({ expanded, onClick, compact = false }: { expande
     <button
       type="button"
       onClick={onClick}
+      aria-expanded={expanded}
       className={`${compact ? '' : 'mt-3'} inline-flex items-center gap-1 text-xs font-medium text-gray-500 transition-colors hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded`}
     >
       {expanded ? 'Mostrar menos' : 'Mostrar mais'}
@@ -622,7 +616,12 @@ function CategoryRankingRow({ item, index, total, onClick }: {
   const percent = total > 0 ? (item.value / total) * 100 : 0;
 
   return (
-    <button type="button" onClick={onClick} className="w-full rounded-md px-1 py-2.5 text-left transition-colors hover:bg-blue-50/60">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Ver detalhes da categoria ${item.category}`}
+      className="w-full rounded-md px-1 py-2.5 text-left transition-colors hover:bg-blue-50/60 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+    >
       <div className="mb-2 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
@@ -660,7 +659,12 @@ function HealthIndicatorCard({ indicator, onClick }: { indicator: FinancialHealt
       : formatPercent(indicator.value);
 
   return (
-    <button type="button" onClick={onClick} className="rounded-md bg-gray-50/70 p-3 text-left transition-colors hover:bg-blue-50/70">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Ver detalhes de ${indicator.label}`}
+      className="rounded-md bg-gray-50/70 p-3 text-left transition-colors hover:bg-blue-50/70 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className={dashboardText.label}>{indicator.label}</p>

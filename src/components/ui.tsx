@@ -47,24 +47,36 @@ const statTypography = {
 };
 
 export function StatCard({ title, value, subtitle, icon, color = 'gray', onClick, tooltip }: StatCardProps) {
+  const content = (
+    <div className="flex h-full min-h-[92px] flex-col justify-between gap-3 text-left">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className={statTypography.label}>{title}</p>
+          {subtitle && <p className={`${statTypography.secondary} mt-1`}>{subtitle}</p>}
+        </div>
+        {icon && (
+          <div className={`p-2 rounded-lg ${colorMap[color]} flex-shrink-0`}>
+            {icon}
+          </div>
+        )}
+      </div>
+      <p className={`${statTypography.value} leading-tight break-words [overflow-wrap:anywhere]`}>{value}</p>
+    </div>
+  );
+
   return (
     <Tooltip text={tooltip ?? ''} className="w-full h-full">
-      <Card hoverable={!!onClick} onClick={onClick} className="w-full h-full p-4">
-      <div className="flex h-full min-h-[92px] flex-col justify-between gap-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p className={statTypography.label}>{title}</p>
-            {subtitle && <p className={`${statTypography.secondary} mt-1`}>{subtitle}</p>}
-          </div>
-          {icon && (
-            <div className={`p-2 rounded-lg ${colorMap[color]} flex-shrink-0`}>
-              {icon}
-            </div>
-          )}
-        </div>
-        <p className={`${statTypography.value} leading-tight break-words [overflow-wrap:anywhere]`}>{value}</p>
-      </div>
-      </Card>
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className="w-full h-full p-4 bg-white rounded-xl border border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        >
+          {content}
+        </button>
+      ) : (
+        <Card className="w-full h-full p-4">{content}</Card>
+      )}
     </Tooltip>
   );
 }

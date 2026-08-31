@@ -1750,7 +1750,7 @@ Testes:
 
 ## ETAPA 22 — Revisar interação, teclado e acessibilidade
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Validar
@@ -1772,22 +1772,35 @@ Testes:
 
 ### Critérios de aceite
 
-- [ ] Navegação por teclado funcional.
-- [ ] Foco visível.
-- [ ] Tooltips acessíveis.
-- [ ] Elementos clicáveis semanticamente corretos.
+- [x] Navegação por teclado funcional.
+- [x] Foco visível.
+- [x] Tooltips acessíveis.
+- [x] Elementos clicáveis semanticamente corretos.
 
 ### Notas de implementação
 
 ```text
 Ajustes:
--
+- Cards principais clicáveis (`StatCard`) passaram a renderizar `button` semântico quando possuem ação.
+- Botão de alertas ganhou `aria-label` explícito com quantidade/status.
+- Botões de expandir/recolher ganharam `aria-expanded`.
+- Ranking de categorias e indicadores de saúde ganharam `aria-label` descrevendo a ação de abrir detalhes.
+- Modal de detalhes do Dashboard passou a usar o componente `Modal` compartilhado, com foco inicial, Escape e retorno de foco.
 
 Componentes:
--
+- `StatCard` ajustado em `src/components/ui.tsx`.
+- `DashboardLink`, `DashboardExpandButton`, `CategoryRankingRow` e `HealthIndicatorCard` revisados no Dashboard.
+- Tooltips continuam usando o componente acessível existente com `role="tooltip"` e `aria-describedby`.
 
 Arquivos:
--
+- src/components/ui.tsx
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1796,7 +1809,7 @@ Arquivos:
 
 ## ETAPA 23 — Auditoria final de clareza do Dashboard
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0 antes de finalizar
 
 ### Objetivo
@@ -1858,33 +1871,39 @@ Não aceitar divergência numérica causada por refatoração de UI.
 
 ### Critérios de aceite
 
-- [ ] As 8 perguntas são respondidas rapidamente.
-- [ ] Não há números principais duplicados sem necessidade.
-- [ ] Home parece resumo e não relatório.
-- [ ] Detalhes continuam acessíveis.
-- [ ] Todos os valores batem com o motor financeiro.
-- [ ] Testes passam.
-- [ ] Typecheck passa.
-- [ ] Lint passa sem novos erros.
-- [ ] Build passa.
+- [x] As 8 perguntas são respondidas rapidamente.
+- [x] Não há números principais duplicados sem necessidade.
+- [x] Home parece resumo e não relatório.
+- [x] Detalhes continuam acessíveis.
+- [x] Todos os valores batem com o motor financeiro.
+- [x] Testes passam.
+- [x] Typecheck passa.
+- [x] Lint passa sem novos erros.
+- [x] Build passa.
 
 ### Notas de implementação
 
 ```text
 Problemas encontrados:
--
+- Blocos principais estavam claros visualmente, mas faltava marcação semântica por região.
 
 Redundâncias removidas:
--
+- Nenhum número principal duplicado foi identificado; fatura, risco futuro, categorias e saúde permanecem em locais únicos ou em detalhe.
 
 Ajustes finais:
--
+- Header trocado para `header`.
+- Resumo do mês, Cartões/Próximos meses, Categorias/Saúde financeira e Fluxo futuro passaram a usar `section` nomeada.
+- Gráfico futuro ganhou `aria-labelledby` com título existente.
 
 Validação financeira:
--
+- Dashboard continua lendo os mesmos dados de `projectMonths`, `getPlanningMonthDetails`, `generateAlerts`, `getCardMonthlyLimit`, `getFinancialHealthIndicators` e `getProjectionHorizonSummaries`.
+- A etapa alterou somente estrutura semântica/UX, sem fórmulas ou cálculo financeiro.
 
 Testes:
--
+- `npm test`
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
 ```
 
 ---
@@ -1926,6 +1945,8 @@ Adicionar uma linha sempre que uma etapa for concluída.
 | 2026-08-31 | Etapa 19 — Padronizar tipografia e peso visual | Concluído | Dashboard e StatCard passaram a usar escalas tipográficas centralizadas para títulos, labels, valores, textos secundários e ajuda/contexto. | src/components/ui.tsx, src/pages/DashboardPage.tsx |
 | 2026-08-31 | Etapa 20 — Padronizar uso de cores de status | Concluído | Cores do Dashboard foram ajustadas para comunicar estado, deixando números contábeis neutros e mantendo verde/amarelo/vermelho para saudável/atenção/crítico. | src/pages/DashboardPage.tsx |
 | 2026-08-31 | Etapa 21 — Revisar Dashboard em resoluções menores | Concluído | Dashboard recebeu ajustes de grid, quebra de valores, header e ranking para evitar overflow horizontal e manter CTAs acessíveis em telas menores. | src/components/ui.tsx, src/pages/DashboardPage.tsx |
+| 2026-08-31 | Etapa 22 — Revisar interação, teclado e acessibilidade | Concluído | Cards clicáveis, botões de expansão, alertas, ranking, saúde financeira e modal de detalhes foram revisados com semântica, foco e atributos ARIA. | src/components/ui.tsx, src/pages/DashboardPage.tsx |
+| 2026-08-31 | Etapa 23 — Auditoria final de clareza do Dashboard | Concluído | Dashboard foi auditado para responder rapidamente às 8 perguntas principais, manter números sem duplicidade desnecessária e preservar detalhes por modal/navegação, com regiões semânticas nos blocos finais. | src/pages/DashboardPage.tsx |
 
 ---
 
