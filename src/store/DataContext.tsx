@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { AppData, Income, Expense, CreditCard, CardPurchase, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
-import { loadLocalData, saveLocalData, loadRemoteData, saveRemoteData, resetData } from '@/lib/storage';
+import { loadLocalData, saveLocalData, loadRemoteData, saveRemoteData, resetData, migrateData } from '@/lib/storage';
 import { defaultCategoryClass } from '@/lib/seed';
 import { uid, currentMonthKey, addMonths, compareMonths } from '@/lib/format';
 import { getActiveVigencia as getFinanceActiveVigencia, invoiceStatusKey, isExpensePaidForMonth as getFinanceExpensePaidForMonth } from '@/lib/projection';
@@ -77,6 +77,7 @@ interface DataContextValue {
   isInvoicePaid: (cardId: string, monthKey: string) => boolean;
   // Reset
   resetAll: () => void;
+  importData: (backup: unknown) => void;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -569,6 +570,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setData(fresh);
   }, [localStorageUserId]);
 
+  const importData = useCallback((backup: unknown) => {
+    const imported = migrateData(backup);
+    setData({
+      ...imported,
+      history: [
+        { id: uid(), timestamp: new Date().toISOString(), action: 'importação', entity: 'backup', detail: 'Banco importado por arquivo JSON.' },
+        ...imported.history,
+      ].slice(0, 200),
+    });
+  }, []);
+
   const value: DataContextValue = {
     data,
     loading,
@@ -593,6 +605,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     toggleInvoicePaid,
     isInvoicePaid: isInvoicePaidCb,
     resetAll,
+    importData,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

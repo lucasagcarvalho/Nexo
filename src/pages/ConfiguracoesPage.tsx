@@ -1,18 +1,18 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Settings as SettingsIcon, PiggyBank, History, FlaskConical, Layers, Trash2, Plus, AlertTriangle, CheckCircle2, Users, Edit2, Power, Tag } from 'lucide-react';
+import { useEffect, useState, useMemo, useRef, type ChangeEvent } from 'react';
+import { Settings as SettingsIcon, PiggyBank, History, FlaskConical, Layers, Trash2, Plus, AlertTriangle, CheckCircle2, Users, Edit2, Power, Tag, Download, Upload } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { getCategoryBudgetUsages, getDataQualityIssues, projectMonths, simulatePurchase, type MonthProjection } from '@/lib/projection';
 import { compareMonths, formatCurrency, monthShort, formatMonthBR } from '@/lib/format';
 import { Card, Badge, Button, Input, Select, ConfirmDialog, ProgressBar, IconButton, Modal, EmptyState, MonthPicker, CurrencyInput } from '@/components/ui';
-import type { Scenario, ScenarioType, CategoryEntry, CategoryBudget, ExpenseClass } from '@/lib/types';
+import type { AppData, Scenario, ScenarioType, CategoryEntry, CategoryBudget, ExpenseClass } from '@/lib/types';
 import { PessoasTab } from '@/pages/PessoasTab';
 
 type Tab = 'configuracoes' | 'reserva' | 'cenarios' | 'simulador' | 'historico' | 'pendentes' | 'pessoas' | 'categorias';
 
 export function ConfiguracoesPage() {
-  const { data, updateSettings, addScenario, deleteScenario, markPendingAdded, addPendingExpense, deletePendingExpense, resetAll, addPerson, updatePerson, deletePerson, togglePerson, addCategory, updateCategory, deleteCategory, toggleCategory, addCategoryBudget, updateCategoryBudget, deleteCategoryBudget } = useData();
+  const { data, updateSettings, addScenario, deleteScenario, markPendingAdded, addPendingExpense, deletePendingExpense, resetAll, importData, addPerson, updatePerson, deletePerson, togglePerson, addCategory, updateCategory, deleteCategory, toggleCategory, addCategoryBudget, updateCategoryBudget, deleteCategoryBudget } = useData();
   const [tab, setTab] = useState<Tab>('configuracoes');
   const [confirmReset, setConfirmReset] = useState(false);
 
@@ -55,7 +55,7 @@ export function ConfiguracoesPage() {
         })}
       </div>
 
-      {tab === 'configuracoes' && <ConfigTab settings={data.settings} updateSettings={updateSettings} onReset={() => setConfirmReset(true)} />}
+      {tab === 'configuracoes' && <ConfigTab data={data} settings={data.settings} updateSettings={updateSettings} importData={importData} onReset={() => setConfirmReset(true)} />}
       {tab === 'reserva' && <ReservaTab data={data} current={current} />}
       {tab === 'cenarios' && <CenariosTab data={data} selectedMonth={selectedMonth} addScenario={addScenario} deleteScenario={deleteScenario} />}
       {tab === 'simulador' && <SimuladorTab data={data} />}
@@ -76,14 +76,68 @@ export function ConfiguracoesPage() {
   );
 }
 
-function ConfigTab({ settings, updateSettings, onReset }: { settings: ReturnType<typeof useData>['data']['settings']; updateSettings: (u: Partial<typeof settings>) => void; onReset: () => void }) {
+function ConfigTab({ data, settings, updateSettings, importData, onReset }: { data: AppData; settings: AppData['settings']; updateSettings: (u: Partial<typeof settings>) => void; importData: (backup: unknown) => void; onReset: () => void }) {
   const [local, setLocal] = useState(settings);
+  const [pendingImport, setPendingImport] = useState<unknown | null>(null);
+  const [importFileName, setImportFileName] = useState('');
+  const [backupMessage, setBackupMessage] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const save = () => {
     updateSettings(local);
   };
 
   const total = local.surplusReserve + local.surplusNextMonth + local.surplusDebt + local.surplusFree;
+
+  const exportBackup = () => {
+    const payload = {
+      app: 'NEXO Financeiro',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `nexo-backup-${date}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setBackupMessage('Backup exportado em JSON.');
+  };
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const payload = parsed && typeof parsed === 'object' && 'data' in parsed ? (parsed as { data: unknown }).data : parsed;
+      setPendingImport(payload);
+      setImportFileName(file.name);
+      setBackupMessage('');
+    } catch {
+      setPendingImport(null);
+      setImportFileName('');
+      setBackupMessage('Não foi possível ler o arquivo. Use um JSON exportado pelo NEXO.');
+    }
+  };
+
+  const confirmImport = () => {
+    if (!pendingImport) return;
+    try {
+      importData(pendingImport);
+      setPendingImport(null);
+      setImportFileName('');
+      setBackupMessage('Backup importado. Os dados atuais foram substituídos.');
+    } catch {
+      setBackupMessage('Backup inválido. Nenhum dado foi alterado.');
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -134,10 +188,42 @@ function ConfigTab({ settings, updateSettings, onReset }: { settings: ReturnType
         </div>
       </Card>
 
+      <Card className="p-4">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Backup do banco</h3>
+        <p className="text-xs text-gray-400 mb-3">Exporte um arquivo JSON completo ou importe um backup para substituir os dados atuais.</p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button variant="secondary" onClick={exportBackup} className="inline-flex items-center justify-center gap-2">
+            <Download size={16} />
+            Exportar banco
+          </Button>
+          <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center gap-2">
+            <Upload size={16} />
+            Importar banco
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+        </div>
+        {backupMessage && <p className="text-xs text-gray-500 mt-3">{backupMessage}</p>}
+      </Card>
+
       <div className="flex justify-between">
         <Button variant="danger" onClick={onReset}>Resetar todos os dados</Button>
         <Button onClick={save} disabled={total !== 100}>Salvar configurações</Button>
       </div>
+
+      <ConfirmDialog
+        open={pendingImport !== null}
+        title="Importar banco"
+        message={`Importar "${importFileName}" irá substituir todos os dados atuais. Exporte um backup antes se quiser preservar o estado atual.`}
+        onConfirm={confirmImport}
+        onCancel={() => { setPendingImport(null); setImportFileName(''); }}
+        confirmText="Importar banco"
+      />
     </div>
   );
 }

@@ -5,6 +5,25 @@ import { uid, currentMonthKey } from './format';
 import { getSupabase } from './supabaseClient';
 
 const STORAGE_KEY = 'recuperacao-financeira-v3';
+const APP_DATA_KEYS = [
+  'incomes',
+  'expenses',
+  'cards',
+  'purchases',
+  'debts',
+  'scenarios',
+  'settings',
+  'history',
+  'pendingExpenses',
+  'categories',
+  'categoryEntries',
+  'bankAccounts',
+  'bankBalanceSnapshots',
+  'people',
+  'incomeTypes',
+  'categoryBudgets',
+  'cardInvoiceStatus',
+];
 
 function storageKey(userId?: string): string {
   return userId ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY;
@@ -186,7 +205,14 @@ function migrateExpense(old: any): Expense {
   };
 }
 
-function migrateData(data: any): AppData {
+export function migrateData(data: any): AppData {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Arquivo de backup inválido.');
+  }
+  if (!APP_DATA_KEYS.some((key) => key in data)) {
+    throw new Error('Arquivo de backup não contém dados do NEXO.');
+  }
+
   const seed = seedData();
   const categories: string[] = data.categories ?? seed.categories;
   let categoryEntries: CategoryEntry[] = data.categoryEntries;
