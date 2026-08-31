@@ -1,4 +1,4 @@
-import type { AccountTransaction, AccountTransactionRelatedEntityType, AppData } from '../types';
+import type { AccountTransaction, AccountTransactionRelatedEntityType, AppData, ExpensePayment, IncomeReceipt } from '../types';
 import { uid } from '../format';
 
 export interface AccountLedgerBalanceComparison {
@@ -138,6 +138,114 @@ export function createManualAdjustmentTransaction(
     note: note || 'Conciliação manual de saldo.',
     createdAt: new Date().toISOString(),
   };
+}
+
+export function createIncomeReceiptTransaction(
+  incomeId: string,
+  accountId: string,
+  amount: number,
+  date: string,
+  relatedMonthKey: string,
+  note?: string,
+): AccountTransaction | null {
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (
+    !incomeId
+    || !accountId
+    || !isValidDateKey(date)
+    || !isValidMonthKey(relatedMonthKey)
+    || !Number.isFinite(roundedAmount)
+    || roundedAmount <= 0
+  ) {
+    return null;
+  }
+  return {
+    id: uid(),
+    accountId,
+    date,
+    monthKey: date.slice(0, 7),
+    amount: roundedAmount,
+    kind: 'income_receipt',
+    relatedEntityType: 'income',
+    relatedEntityId: incomeId,
+    relatedMonthKey,
+    note: note || 'Recebimento de receita.',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function getIncomeReceiptForMonth(data: AppData, incomeId: string, monthKey: string): IncomeReceipt | null {
+  return (data.incomeReceipts ?? []).find((receipt) => (
+    receipt.incomeId === incomeId
+    && receipt.monthKey === monthKey
+  )) ?? null;
+}
+
+export function createIncomeReceiptReversalTransaction(
+  data: AppData,
+  incomeId: string,
+  monthKey: string,
+  date?: string,
+): AccountTransaction | null {
+  const receipt = getIncomeReceiptForMonth(data, incomeId, monthKey);
+  if (!receipt) return null;
+  const transaction = getAccountTransactions(data).find((item) => item.id === receipt.transactionId);
+  if (!transaction || isTransactionReversed(data, transaction.id)) return null;
+  return createReversalTransaction(transaction, date ?? receipt.date);
+}
+
+export function createExpensePaymentTransaction(
+  expenseId: string,
+  accountId: string,
+  amount: number,
+  date: string,
+  relatedMonthKey: string,
+  note?: string,
+): AccountTransaction | null {
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (
+    !expenseId
+    || !accountId
+    || !isValidDateKey(date)
+    || !isValidMonthKey(relatedMonthKey)
+    || !Number.isFinite(roundedAmount)
+    || roundedAmount <= 0
+  ) {
+    return null;
+  }
+  return {
+    id: uid(),
+    accountId,
+    date,
+    monthKey: date.slice(0, 7),
+    amount: -roundedAmount,
+    kind: 'expense_payment',
+    relatedEntityType: 'expense',
+    relatedEntityId: expenseId,
+    relatedMonthKey,
+    note: note || 'Pagamento de gasto.',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function getExpensePaymentForMonth(data: AppData, expenseId: string, monthKey: string): ExpensePayment | null {
+  return (data.expensePayments ?? []).find((payment) => (
+    payment.expenseId === expenseId
+    && payment.monthKey === monthKey
+  )) ?? null;
+}
+
+export function createExpensePaymentReversalTransaction(
+  data: AppData,
+  expenseId: string,
+  monthKey: string,
+  date?: string,
+): AccountTransaction | null {
+  const payment = getExpensePaymentForMonth(data, expenseId, monthKey);
+  if (!payment) return null;
+  const transaction = getAccountTransactions(data).find((item) => item.id === payment.transactionId);
+  if (!transaction || isTransactionReversed(data, transaction.id)) return null;
+  return createReversalTransaction(transaction, date ?? payment.date);
 }
 
 export function createReversalTransaction(transaction: AccountTransaction, date = transaction.date): AccountTransaction {

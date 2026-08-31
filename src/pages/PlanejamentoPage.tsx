@@ -1,19 +1,63 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { CalendarDays, Check, Clock, Repeat, Calendar, CreditCard, Landmark, TrendingUp } from 'lucide-react';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { getPlanningMonthDetails, projectMonths } from '@/lib/projection';
 import { formatCurrency, monthLabel, formatDateBR, formatMonthBR } from '@/lib/format';
-import { Card, Badge } from '@/components/ui';
+import type { Expense } from '@/lib/types';
+import { Card, Badge, Button, CurrencyInput, Input, Modal, Select } from '@/components/ui';
 
 export function PlanejamentoPage() {
-  const { data, togglePaidMonth, isExpensePaidForMonth, isInvoicePaid } = useData();
+  const { data, payExpense, undoExpensePayment, isExpensePaidForMonth, isInvoicePaid } = useData();
   const { selectedMonth } = useMonth();
+  const [paying, setPaying] = useState<{ expense: Expense; amount: number } | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    date: '',
+    amount: 0,
+    accountId: '',
+  });
 
   const projection = useMemo(() => projectMonths(data, 24, selectedMonth), [data, selectedMonth]);
   const planning = useMemo(() => getPlanningMonthDetails(data, selectedMonth), [data, selectedMonth]);
   const monthData = projection.months[0];
   const cardEntries = planning.cards;
+  const accountOptions = useMemo(() => [
+    { value: '', label: 'Selecione a conta' },
+    ...data.bankAccounts.map((account) => ({
+      value: account.id,
+      label: `${account.name} · ${account.bank}`,
+    })),
+  ], [data.bankAccounts]);
+
+  const dateForDueDay = (monthKey: string, dueDay: number): string => {
+    const [year, month] = monthKey.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const day = Math.min(Math.max(dueDay, 1), lastDay);
+    return `${monthKey}-${String(day).padStart(2, '0')}`;
+  };
+
+  const openPayment = (expense: Expense, amount: number) => {
+    if (isExpensePaidForMonth(expense, selectedMonth)) return;
+    setPaying({ expense, amount });
+    setPaymentForm({
+      date: dateForDueDay(selectedMonth, expense.dueDay),
+      amount,
+      accountId: data.bankAccounts[0]?.id ?? '',
+    });
+  };
+
+  const savePayment = () => {
+    if (!paying || !paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0) return;
+    payExpense({
+      expenseId: paying.expense.id,
+      monthKey: selectedMonth,
+      date: paymentForm.date,
+      accountId: paymentForm.accountId,
+      expectedAmount: paying.amount,
+      paidAmount: paymentForm.amount,
+    });
+    setPaying(null);
+  };
 
   const bills = useMemo(() => {
     const list: { id: string; date: string; label: string; amount: number; paid: boolean }[] = [];
@@ -125,7 +169,7 @@ export function PlanejamentoPage() {
               return (
                 <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => togglePaidMonth(exp.id, selectedMonth)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
+                    <button onClick={() => (isExpensePaidForMonth(exp, selectedMonth) ? undoExpensePayment(exp.id, selectedMonth) : openPayment(exp, amount))} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
                       {isExpensePaidForMonth(exp, selectedMonth) && <Check size={12} className="text-white" />}
                     </button>
                     <span className="text-sm text-gray-700">{exp.description}</span>
@@ -158,7 +202,7 @@ export function PlanejamentoPage() {
                 return (
                   <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => togglePaidMonth(exp.id, selectedMonth)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
+                      <button onClick={() => (isExpensePaidForMonth(exp, selectedMonth) ? undoExpensePayment(exp.id, selectedMonth) : openPayment(exp, amount))} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
                         {isExpensePaidForMonth(exp, selectedMonth) && <Check size={12} className="text-white" />}
                       </button>
                       <span className="text-sm text-gray-700">{exp.description}</span>
@@ -190,7 +234,7 @@ export function PlanejamentoPage() {
                 return (
                   <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => togglePaidMonth(exp.id, selectedMonth)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
+                      <button onClick={() => (isExpensePaidForMonth(exp, selectedMonth) ? undoExpensePayment(exp.id, selectedMonth) : openPayment(exp, amount))} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
                         {isExpensePaidForMonth(exp, selectedMonth) && <Check size={12} className="text-white" />}
                       </button>
                       <span className="text-sm text-gray-700">{exp.description}</span>
@@ -280,6 +324,28 @@ export function PlanejamentoPage() {
           )}
         </div>
       </Card>
+
+      <Modal open={paying !== null} onClose={() => setPaying(null)} title="Registrar pagamento" footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setPaying(null)}>Cancelar</Button>
+          <Button onClick={savePayment} disabled={!paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0}>
+            Pagar
+          </Button>
+        </div>
+      }>
+        {paying && (
+          <form onSubmit={(e) => { e.preventDefault(); savePayment(); }} className="space-y-3">
+            <div className="p-3 bg-rose-50 rounded-lg">
+              <p className="text-sm font-semibold text-rose-700">{paying.expense.description}</p>
+              <p className="text-xs text-gray-500">Previsto: {formatCurrency(paying.amount)} · Dia {paying.expense.dueDay}</p>
+            </div>
+            <Input label="Data paga" type="date" value={paymentForm.date} onChange={(v) => setPaymentForm({ ...paymentForm, date: v })} required />
+            <CurrencyInput label="Valor pago" value={paymentForm.amount} onChange={(v) => setPaymentForm({ ...paymentForm, amount: v })} required />
+            <Select label="Conta" value={paymentForm.accountId} onChange={(v) => setPaymentForm({ ...paymentForm, accountId: v })} options={accountOptions} required />
+            <button type="submit" className="hidden" aria-hidden="true" />
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }

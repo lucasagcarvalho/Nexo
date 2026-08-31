@@ -20,6 +20,8 @@ const APP_DATA_KEYS = [
   'bankAccounts',
   'bankBalanceSnapshots',
   'accountTransactions',
+  'incomeReceipts',
+  'expensePayments',
   'people',
   'incomeTypes',
   'categoryBudgets',
@@ -311,6 +313,8 @@ export function migrateData(data: any): AppData {
     bankAccounts,
     bankBalanceSnapshots: data.bankBalanceSnapshots ?? [],
     accountTransactions,
+    incomeReceipts: data.incomeReceipts ?? [],
+    expensePayments: data.expensePayments ?? [],
     people: data.people ?? [
       { id: 'p-lucas', name: 'Lucas', active: true },
       { id: 'p-thais', name: 'Thais', active: true },

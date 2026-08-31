@@ -1,10 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import type { AccountTransaction, AppData, Income, Expense, CreditCard, CardPurchase, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
+import type { AccountTransaction, AppData, Income, IncomeReceipt, Expense, ExpensePayment, CreditCard, CardPurchase, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
 import { loadLocalData, saveLocalData, loadRemoteData, saveRemoteData, resetData, migrateData } from '@/lib/storage';
 import { defaultCategoryClass } from '@/lib/seed';
 import { uid, currentMonthKey, addMonths, compareMonths } from '@/lib/format';
 import { getActiveVigencia as getFinanceActiveVigencia, invoiceStatusKey, isExpensePaidForMonth as getFinanceExpensePaidForMonth } from '@/lib/projection';
-import { calculateAccountLedgerBalance, createManualAdjustmentTransaction } from '@/lib/finance/accountTransactionRules';
+import { calculateAccountLedgerBalance, createExpensePaymentReversalTransaction, createExpensePaymentTransaction, createIncomeReceiptReversalTransaction, createIncomeReceiptTransaction, createManualAdjustmentTransaction, getExpensePaymentForMonth, getIncomeReceiptForMonth } from '@/lib/finance/accountTransactionRules';
 import { useAuth } from '@/store/AuthContext';
 
 interface DataContextValue {
@@ -18,12 +18,31 @@ interface DataContextValue {
   deleteIncome: (id: string) => void;
   toggleIncome: (id: string) => void;
   duplicateIncome: (id: string) => void;
+  receiveIncome: (input: {
+    incomeId: string;
+    monthKey: string;
+    date: string;
+    accountId: string;
+    expectedAmount: number;
+    receivedAmount: number;
+  }) => void;
+  undoIncomeReceipt: (incomeId: string, monthKey: string, date?: string) => void;
+  isIncomeReceivedForMonth: (incomeId: string, monthKey: string) => boolean;
   // Expenses
   addExpense: (expense: Omit<Expense, 'id'>) => void;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
   deleteExpense: (id: string) => void;
   duplicateExpense: (id: string) => void;
   togglePaidMonth: (id: string, monthKey: string) => void;
+  payExpense: (input: {
+    expenseId: string;
+    monthKey: string;
+    date: string;
+    accountId: string;
+    expectedAmount: number;
+    paidAmount: number;
+  }) => void;
+  undoExpensePayment: (expenseId: string, monthKey: string, date?: string) => void;
   isExpensePaidForMonth: (expense: Expense, monthKey: string) => boolean;
   deleteExpenseMonth: (id: string, monthKey: string, scope: 'this-month' | 'future') => void;
   // Cards
@@ -182,6 +201,98 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addHistory('duplicação', 'receita', `Receita "${inc.name}" duplicada.`);
   }, [data.incomes, addHistory]);
 
+  const receiveIncome = useCallback((input: {
+    incomeId: string;
+    monthKey: string;
+    date: string;
+    accountId: string;
+    expectedAmount: number;
+    receivedAmount: number;
+  }) => {
+    let incomeName = '';
+    let accountName = '';
+    let receivedAmount = 0;
+    setData((prev) => {
+      const income = prev.incomes.find((item) => item.id === input.incomeId);
+      const account = prev.bankAccounts.find((item) => item.id === input.accountId);
+      if (!income || !account) return prev;
+      if ((prev.incomeReceipts ?? []).some((receipt) => receipt.incomeId === input.incomeId && receipt.monthKey === input.monthKey)) {
+        return prev;
+      }
+      const transaction = createIncomeReceiptTransaction(
+        input.incomeId,
+        input.accountId,
+        input.receivedAmount,
+        input.date,
+        input.monthKey,
+        `Recebimento de "${income.name}".`,
+      );
+      if (!transaction) return prev;
+
+      incomeName = income.name;
+      accountName = account.name;
+      receivedAmount = transaction.amount;
+      const receipt: IncomeReceipt = {
+        id: uid(),
+        incomeId: input.incomeId,
+        monthKey: input.monthKey,
+        date: input.date,
+        accountId: input.accountId,
+        expectedAmount: input.expectedAmount,
+        receivedAmount: transaction.amount,
+        transactionId: transaction.id,
+        createdAt: transaction.createdAt,
+      };
+
+      return {
+        ...prev,
+        incomeReceipts: [...(prev.incomeReceipts ?? []), receipt],
+        accountTransactions: [...(prev.accountTransactions ?? []), transaction],
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === input.accountId ? { ...item, balance: item.balance + transaction.amount } : item
+        )),
+      };
+    });
+    if (incomeName) {
+      addHistory('recebimento', 'receita', `Receita "${incomeName}" recebida em "${accountName}" no valor de R$ ${receivedAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
+
+  const undoIncomeReceipt = useCallback((incomeId: string, monthKey: string, date?: string) => {
+    let incomeName = '';
+    let accountName = '';
+    let reversedAmount = 0;
+    setData((prev) => {
+      const receipt = getIncomeReceiptForMonth(prev, incomeId, monthKey);
+      if (!receipt) return prev;
+      const transaction = (prev.accountTransactions ?? []).find((item) => item.id === receipt.transactionId);
+      const reversal = createIncomeReceiptReversalTransaction(prev, incomeId, monthKey, date);
+      if (!transaction || !reversal) return prev;
+      const income = prev.incomes.find((item) => item.id === incomeId);
+      const account = prev.bankAccounts.find((item) => item.id === receipt.accountId);
+
+      incomeName = income?.name ?? receipt.incomeId;
+      accountName = account?.name ?? receipt.accountId;
+      reversedAmount = transaction.amount;
+
+      return {
+        ...prev,
+        incomeReceipts: (prev.incomeReceipts ?? []).filter((item) => item.id !== receipt.id),
+        accountTransactions: [...(prev.accountTransactions ?? []), reversal],
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === receipt.accountId ? { ...item, balance: item.balance - transaction.amount } : item
+        )),
+      };
+    });
+    if (incomeName) {
+      addHistory('estorno', 'receita', `Recebimento de "${incomeName}" em "${accountName}" desfeito no valor de R$ ${reversedAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
+
+  const isIncomeReceivedForMonth = useCallback((incomeId: string, monthKey: string): boolean => {
+    return (data.incomeReceipts ?? []).some((receipt) => receipt.incomeId === incomeId && receipt.monthKey === monthKey);
+  }, [data.incomeReceipts]);
+
   const addExpense = useCallback((expense: Omit<Expense, 'id'>) => {
     const newExpense: Expense = { ...expense, id: uid() };
     setData((prev) => ({ ...prev, expenses: [...prev.expenses, newExpense] }));
@@ -223,6 +334,111 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }),
     }));
   }, []);
+
+  const payExpense = useCallback((input: {
+    expenseId: string;
+    monthKey: string;
+    date: string;
+    accountId: string;
+    expectedAmount: number;
+    paidAmount: number;
+  }) => {
+    let expenseName = '';
+    let accountName = '';
+    let paidAmount = 0;
+    setData((prev) => {
+      const expense = prev.expenses.find((item) => item.id === input.expenseId);
+      const account = prev.bankAccounts.find((item) => item.id === input.accountId);
+      if (!expense || !account) return prev;
+      if (getExpensePaymentForMonth(prev, input.expenseId, input.monthKey)) return prev;
+      const transaction = createExpensePaymentTransaction(
+        input.expenseId,
+        input.accountId,
+        input.paidAmount,
+        input.date,
+        input.monthKey,
+        `Pagamento de "${expense.description}".`,
+      );
+      if (!transaction) return prev;
+
+      expenseName = expense.description;
+      accountName = account.name;
+      paidAmount = Math.abs(transaction.amount);
+      const payment: ExpensePayment = {
+        id: uid(),
+        expenseId: input.expenseId,
+        monthKey: input.monthKey,
+        date: input.date,
+        accountId: input.accountId,
+        expectedAmount: input.expectedAmount,
+        paidAmount,
+        transactionId: transaction.id,
+        createdAt: transaction.createdAt,
+      };
+
+      return {
+        ...prev,
+        expenses: prev.expenses.map((item) => {
+          if (item.id !== input.expenseId) return item;
+          const paidMonths = { ...(item.paidMonths ?? {}), [input.monthKey]: true };
+          return {
+            ...item,
+            paid: item.type === 'Pontual' ? true : item.paid,
+            paidMonths,
+          };
+        }),
+        expensePayments: [...(prev.expensePayments ?? []), payment],
+        accountTransactions: [...(prev.accountTransactions ?? []), transaction],
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === input.accountId ? { ...item, balance: item.balance + transaction.amount } : item
+        )),
+      };
+    });
+    if (expenseName) {
+      addHistory('pagamento', 'despesa', `Despesa "${expenseName}" paga em "${accountName}" no valor de R$ ${paidAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
+
+  const undoExpensePayment = useCallback((expenseId: string, monthKey: string, date?: string) => {
+    let expenseName = '';
+    let accountName = '';
+    let reversedAmount = 0;
+    setData((prev) => {
+      const payment = getExpensePaymentForMonth(prev, expenseId, monthKey);
+      if (!payment) return prev;
+      const transaction = (prev.accountTransactions ?? []).find((item) => item.id === payment.transactionId);
+      const reversal = createExpensePaymentReversalTransaction(prev, expenseId, monthKey, date);
+      if (!transaction || !reversal) return prev;
+      const expense = prev.expenses.find((item) => item.id === expenseId);
+      const account = prev.bankAccounts.find((item) => item.id === payment.accountId);
+
+      expenseName = expense?.description ?? payment.expenseId;
+      accountName = account?.name ?? payment.accountId;
+      reversedAmount = Math.abs(transaction.amount);
+
+      return {
+        ...prev,
+        expenses: prev.expenses.map((item) => {
+          if (item.id !== expenseId) return item;
+          const paidMonths = { ...(item.paidMonths ?? {}) };
+          delete paidMonths[monthKey];
+          return {
+            ...item,
+            paid: item.type === 'Pontual' ? false : item.paid,
+            paidMonths,
+          };
+        }),
+        expensePayments: (prev.expensePayments ?? []).filter((item) => item.id !== payment.id),
+        accountTransactions: [...(prev.accountTransactions ?? []), reversal],
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === payment.accountId ? { ...item, balance: item.balance - transaction.amount } : item
+        )),
+      };
+    });
+    if (expenseName) {
+      addHistory('estorno', 'despesa', `Pagamento de "${expenseName}" em "${accountName}" desfeito no valor de R$ ${reversedAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
 
   const isExpensePaidForMonth = useCallback((expense: Expense, monthKey: string): boolean => {
     return getFinanceExpensePaidForMonth(expense, monthKey);
@@ -498,6 +714,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       bankAccounts: prev.bankAccounts.filter((a) => a.id !== id),
       bankBalanceSnapshots: prev.bankBalanceSnapshots.filter((s) => s.accountId !== id),
       accountTransactions: (prev.accountTransactions ?? []).filter((t) => t.accountId !== id),
+      incomeReceipts: (prev.incomeReceipts ?? []).filter((receipt) => receipt.accountId !== id),
+      expensePayments: (prev.expensePayments ?? []).filter((payment) => payment.accountId !== id),
     }));
     if (acc) addHistory('exclusão', 'conta', `Conta "${acc.name}" excluída.`);
   }, [data.bankAccounts, addHistory]);
@@ -645,8 +863,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     loading,
     saveError,
     clearSaveError,
-    addIncome, updateIncome, deleteIncome, toggleIncome, duplicateIncome,
-    addExpense, updateExpense, deleteExpense, duplicateExpense, togglePaidMonth, isExpensePaidForMonth, deleteExpenseMonth,
+    addIncome, updateIncome, deleteIncome, toggleIncome, duplicateIncome, receiveIncome, undoIncomeReceipt, isIncomeReceivedForMonth,
+    addExpense, updateExpense, deleteExpense, duplicateExpense, togglePaidMonth, payExpense, undoExpensePayment, isExpensePaidForMonth, deleteExpenseMonth,
     addCard, updateCard, deleteCard,
     addPurchase, updatePurchase, deletePurchase, duplicatePurchase,
     addDebt, updateDebt, deleteDebt,

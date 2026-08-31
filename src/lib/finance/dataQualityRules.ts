@@ -52,6 +52,8 @@ export function getDataQualityIssues(data: AppData): DataQualityIssue[] {
   const cardIds = new Set(data.cards.map((card) => card.id));
   const accountIds = new Set(data.bankAccounts.map((account) => account.id));
   const incomeIds = new Set(data.incomes.map((income) => income.id));
+  const expenseIds = new Set(data.expenses.map((expense) => expense.id));
+  const transactionIds = new Set((data.accountTransactions ?? []).map((transaction) => transaction.id));
 
   for (const income of data.incomes) {
     if (hasNegativeAmount(income.vigencias)) {
@@ -135,6 +137,42 @@ export function getDataQualityIssues(data: AppData): DataQualityIssue[] {
     }
     if (hasMissingPerson(data, debt.person)) {
       issues.push(issue('warning', 'dívida', debt.id, `Dívida "${debt.name}" referencia pessoa removida.`, 'Selecione uma pessoa cadastrada para esta dívida.'));
+    }
+  }
+
+  for (const receipt of data.incomeReceipts ?? []) {
+    if (!incomeIds.has(receipt.incomeId)) {
+      issues.push(issue('warning', 'recebimento', receipt.id, 'Recebimento referencia receita removida.', 'Remova o recebimento ou restaure a receita vinculada.'));
+    }
+    if (!accountIds.has(receipt.accountId)) {
+      issues.push(issue('critical', 'recebimento', receipt.id, 'Recebimento referencia conta removida.', 'Restaure a conta vinculada ou revise o recebimento.'));
+    }
+    if (!isValidMonthKey(receipt.monthKey) || !isValidDate(receipt.date)) {
+      issues.push(issue('critical', 'recebimento', receipt.id, 'Recebimento possui mês ou data inválidos.', 'Informe mês e data nos formatos AAAA-MM e AAAA-MM-DD.'));
+    }
+    if (!isFiniteNumber(receipt.expectedAmount) || !isFiniteNumber(receipt.receivedAmount) || receipt.receivedAmount < 0) {
+      issues.push(issue('critical', 'recebimento', receipt.id, 'Recebimento possui valor inválido.', 'Corrija os valores previsto e recebido.'));
+    }
+    if (!transactionIds.has(receipt.transactionId)) {
+      issues.push(issue('critical', 'recebimento', receipt.id, 'Recebimento referencia movimentação inexistente.', 'Recrie ou concilie a movimentação bancária vinculada.'));
+    }
+  }
+
+  for (const payment of data.expensePayments ?? []) {
+    if (!expenseIds.has(payment.expenseId)) {
+      issues.push(issue('warning', 'pagamento', payment.id, 'Pagamento referencia despesa removida.', 'Remova o pagamento ou restaure a despesa vinculada.'));
+    }
+    if (!accountIds.has(payment.accountId)) {
+      issues.push(issue('critical', 'pagamento', payment.id, 'Pagamento referencia conta removida.', 'Restaure a conta vinculada ou revise o pagamento.'));
+    }
+    if (!isValidMonthKey(payment.monthKey) || !isValidDate(payment.date)) {
+      issues.push(issue('critical', 'pagamento', payment.id, 'Pagamento possui mês ou data inválidos.', 'Informe mês e data nos formatos AAAA-MM e AAAA-MM-DD.'));
+    }
+    if (!isFiniteNumber(payment.expectedAmount) || !isFiniteNumber(payment.paidAmount) || payment.paidAmount < 0) {
+      issues.push(issue('critical', 'pagamento', payment.id, 'Pagamento possui valor inválido.', 'Corrija os valores previsto e pago.'));
+    }
+    if (!transactionIds.has(payment.transactionId)) {
+      issues.push(issue('critical', 'pagamento', payment.id, 'Pagamento referencia movimentação inexistente.', 'Recrie ou concilie a movimentação bancária vinculada.'));
     }
   }
 

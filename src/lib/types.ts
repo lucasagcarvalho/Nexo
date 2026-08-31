@@ -57,6 +57,30 @@ export interface Income {
   overrides?: Record<string, number>;
 }
 
+export interface IncomeReceipt {
+  id: string;
+  incomeId: string;
+  monthKey: string;
+  date: string; // YYYY-MM-DD
+  accountId: string;
+  expectedAmount: number;
+  receivedAmount: number;
+  transactionId: string;
+  createdAt: string;
+}
+
+export interface ExpensePayment {
+  id: string;
+  expenseId: string;
+  monthKey: string;
+  date: string; // YYYY-MM-DD
+  accountId: string;
+  expectedAmount: number;
+  paidAmount: number;
+  transactionId: string;
+  createdAt: string;
+}
+
 export interface Expense {
   id: string;
   description: string;
@@ -240,6 +264,8 @@ export interface AppData {
   bankAccounts: BankAccount[];
   bankBalanceSnapshots: BankBalanceSnapshot[];
   accountTransactions?: AccountTransaction[];
+  incomeReceipts?: IncomeReceipt[];
+  expensePayments?: ExpensePayment[];
   people: PersonEntry[];
   incomeTypes: string[];
   categoryBudgets: CategoryBudget[];

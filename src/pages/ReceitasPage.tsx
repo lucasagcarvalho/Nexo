@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Edit2, Trash2, Copy, Power, TrendingUp, Repeat, Calendar, CalendarRange, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Copy, Power, TrendingUp, Repeat, Calendar, CalendarRange, AlertCircle, CheckCircle2, Undo2 } from 'lucide-react';
 import { useData, getActiveVigencia, applyVigenciaChange, applyMonthOverride } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { formatCurrency, formatMonthBR, currentMonthKey, uid, compareMonths } from '@/lib/format';
@@ -27,13 +27,19 @@ const KIND_ICONS: Record<IncomeKind, typeof Repeat> = {
 };
 
 export function ReceitasPage() {
-  const { data, addIncome, updateIncome, deleteIncome, toggleIncome, duplicateIncome, addPerson, addIncomeType } = useData();
+  const { data, addIncome, updateIncome, deleteIncome, toggleIncome, duplicateIncome, receiveIncome, undoIncomeReceipt, isIncomeReceivedForMonth, addPerson, addIncomeType } = useData();
   const { selectedMonth } = useMonth();
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
   const [editing, setEditing] = useState<Income | null>(null);
+  const [receiving, setReceiving] = useState<Income | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
+  const [receiptForm, setReceiptForm] = useState({
+    date: '',
+    amount: 0,
+    accountId: '',
+  });
 
   const incomeTypeOptions = useMemo(() => [...data.incomeTypes], [data.incomeTypes]);
   const accountOptions = useMemo(() => [
@@ -199,6 +205,37 @@ export function ReceitasPage() {
     return vig?.amount ?? 0;
   };
 
+  const dateForDueDay = (monthKey: string, dueDay: number): string => {
+    const [year, month] = monthKey.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const day = Math.min(Math.max(dueDay, 1), lastDay);
+    return `${monthKey}-${String(day).padStart(2, '0')}`;
+  };
+
+  const openReceive = (inc: Income) => {
+    if (isIncomeReceivedForMonth(inc.id, selectedMonth)) return;
+    const defaultAccountExists = data.bankAccounts.some((account) => account.id === inc.defaultAccountId);
+    setReceiving(inc);
+    setReceiptForm({
+      date: dateForDueDay(selectedMonth, inc.dueDay),
+      amount: getAmount(inc),
+      accountId: defaultAccountExists ? (inc.defaultAccountId ?? '') : (data.bankAccounts[0]?.id ?? ''),
+    });
+  };
+
+  const saveReceipt = () => {
+    if (!receiving || !receiptForm.accountId || receiptForm.amount <= 0 || !receiptForm.date) return;
+    receiveIncome({
+      incomeId: receiving.id,
+      monthKey: selectedMonth,
+      date: receiptForm.date,
+      accountId: receiptForm.accountId,
+      expectedAmount: getAmount(receiving),
+      receivedAmount: receiptForm.amount,
+    });
+    setReceiving(null);
+  };
+
   const getKindDescription = (inc: Income): string => {
     if (inc.kind === 'fixa') {
       return `Fixa · ${formatCurrency(getAmount(inc))} · Ativa`;
@@ -261,6 +298,7 @@ export function ReceitasPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {monthIncomes.map((inc) => {
               const KindIcon = KIND_ICONS[inc.kind];
+              const isReceived = isIncomeReceivedForMonth(inc.id, selectedMonth);
               return (
                 <Card key={inc.id} className="p-4">
                   <div className="flex items-start justify-between mb-2">
@@ -269,7 +307,10 @@ export function ReceitasPage() {
                       <p className="text-xs text-gray-400">{inc.type} · {inc.person} · Dia {inc.dueDay}</p>
                       <p className="text-xs text-gray-400 mt-0.5">Conta destino: {getAccountLabel(inc.defaultAccountId)}</p>
                     </div>
-                    <Badge color={KIND_BADGE_COLORS[inc.kind]}>{KIND_LABELS[inc.kind]}</Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge color={KIND_BADGE_COLORS[inc.kind]}>{KIND_LABELS[inc.kind]}</Badge>
+                      {isReceived && <Badge color="green">Recebida</Badge>}
+                    </div>
                   </div>
                   <p className="text-2xl font-bold text-emerald-600 mb-1">{formatCurrency(getAmount(inc))}</p>
                   <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
@@ -278,6 +319,11 @@ export function ReceitasPage() {
                   </div>
                   {inc.note && <p className="text-xs text-gray-500 mb-3 italic">{inc.note}</p>}
                   <div className="flex gap-1">
+                    <IconButton
+                      icon={isReceived ? <Undo2 size={14} /> : <CheckCircle2 size={14} />}
+                      label={isReceived ? 'Desfazer recebimento' : 'Receber receita'}
+                      onClick={() => (isReceived ? undoIncomeReceipt(inc.id, selectedMonth) : openReceive(inc))}
+                    />
                     <IconButton icon={<Edit2 size={14} />} label="Editar receita" onClick={() => openEdit(inc)} />
                     <IconButton icon={<Copy size={14} />} label="Duplicar receita" onClick={() => duplicateIncome(inc.id)} />
                     <IconButton icon={<Power size={14} />} label={inc.active ? 'Desativar receita' : 'Ativar receita'} onClick={() => toggleIncome(inc.id)} />
@@ -424,6 +470,28 @@ export function ReceitasPage() {
           <TextArea label="Observação" value={form.note} onChange={(v) => setForm({ ...form, note: v })} />
           <button type="submit" className="hidden" aria-hidden="true" />
         </form>
+      </Modal>
+
+      <Modal open={receiving !== null} onClose={() => setReceiving(null)} title="Registrar recebimento" footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setReceiving(null)}>Cancelar</Button>
+          <Button onClick={saveReceipt} disabled={!receiptForm.accountId || receiptForm.amount <= 0 || !receiptForm.date}>
+            Receber
+          </Button>
+        </div>
+      }>
+        {receiving && (
+          <form onSubmit={(e) => { e.preventDefault(); saveReceipt(); }} className="space-y-3">
+            <div className="p-3 bg-emerald-50 rounded-lg">
+              <p className="text-sm font-semibold text-emerald-700">{receiving.name}</p>
+              <p className="text-xs text-gray-500">Previsto: {formatCurrency(getAmount(receiving))} · Dia {receiving.dueDay}</p>
+            </div>
+            <Input label="Data recebida" type="date" value={receiptForm.date} onChange={(v) => setReceiptForm({ ...receiptForm, date: v })} required />
+            <CurrencyInput label="Valor recebido" value={receiptForm.amount} onChange={(v) => setReceiptForm({ ...receiptForm, amount: v })} required />
+            <Select label="Conta" value={receiptForm.accountId} onChange={(v) => setReceiptForm({ ...receiptForm, accountId: v })} options={accountOptions} required />
+            <button type="submit" className="hidden" aria-hidden="true" />
+          </form>
+        )}
       </Modal>
 
       <ConfirmDialog

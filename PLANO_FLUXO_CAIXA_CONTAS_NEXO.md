@@ -668,7 +668,7 @@ Arquivos:
 
 ## ETAPA 07 — Criar recebimento mensal de receita
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Problema
@@ -716,37 +716,54 @@ income_receipt +R$ 10.000
 
 ### Critérios de aceite
 
-- [ ] Recebimento é mensal.
-- [ ] Pode registrar valor diferente do previsto.
-- [ ] Pode informar data real.
-- [ ] Pode escolher conta.
-- [ ] Movimentação criada uma única vez.
-- [ ] Receita prevista não duplica receita realizada no motor.
+- [x] Recebimento é mensal.
+- [x] Pode registrar valor diferente do previsto.
+- [x] Pode informar data real.
+- [x] Pode escolher conta.
+- [x] Movimentação criada uma única vez.
+- [x] Receita prevista não duplica receita realizada no motor.
 
 ### Notas de implementação
 
 ```text
 Model:
--
+- `IncomeReceipt` registra `incomeId`, `monthKey`, `date`, `accountId`, valores previsto/recebido, `transactionId` e `createdAt`.
+- `AppData.incomeReceipts?: IncomeReceipt[]`.
 
 Fluxo:
--
+- `DataContext.receiveIncome` registra o recebimento por `incomeId + monthKey`.
+- O recebimento incrementa `BankAccount.balance` da conta escolhida.
+- `DataContext.isIncomeReceivedForMonth` identifica o estado mensal na UI.
+- Desfazer recebimento permanece fora do escopo desta etapa.
 
 Transação:
--
+- `createIncomeReceiptTransaction` cria `AccountTransaction.kind = 'income_receipt'` com valor positivo.
+- A transação usa `relatedEntityType = 'income'`, `relatedEntityId = incomeId` e `relatedMonthKey = monthKey`.
+- A criação é idempotente por recebimento mensal existente.
 
 Arquivos:
--
+- `src/lib/types.ts`
+- `src/lib/seed.ts`
+- `src/lib/storage.ts`
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/lib/finance/dataQualityRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/ReceitasPage.tsx`
+- `test/finance.test.ts`
+- `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md`
 
 Testes:
--
+- Recebimento mensal cria movimentação bancária sem duplicar receita mensal.
+- Transação rejeita dados inválidos.
+- Migração inicializa `incomeReceipts` de forma compatível.
+- Qualidade de dados valida recebimento com movimentação inexistente.
 ```
 
 ---
 
 ## ETAPA 08 — Permitir desfazer recebimento
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Objetivo
@@ -755,23 +772,30 @@ Desfazer recebimento sem corromper saldo.
 
 ### Critérios de aceite
 
-- [ ] Desfazer altera estado mensal.
-- [ ] Saldo volta corretamente.
-- [ ] Histórico preservado.
-- [ ] Duplo clique não duplica estorno.
-- [ ] Testes cobrem reversão.
+- [x] Desfazer altera estado mensal.
+- [x] Saldo volta corretamente.
+- [x] Histórico preservado.
+- [x] Duplo clique não duplica estorno.
+- [x] Testes cobrem reversão.
 
 ### Notas de implementação
 
 ```text
 Estorno:
--
+- `undoIncomeReceipt` remove o `IncomeReceipt` mensal e cria uma transação `reversal` apontando para a `income_receipt` original.
+- O saldo armazenado em `BankAccount.balance` é reduzido pelo valor da transação original.
+- O ledger preserva a movimentação original e o estorno.
 
 Idempotência:
--
+- `createIncomeReceiptReversalTransaction` retorna `null` se não houver recebimento, transação original ou se a transação já estiver revertida.
+- Dupla tentativa de desfazer não cria novo estorno.
 
 Arquivos:
--
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/ReceitasPage.tsx`
+- `test/finance.test.ts`
+- `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md`
 ```
 
 ---
@@ -780,7 +804,7 @@ Arquivos:
 
 ## ETAPA 09 — Vincular pagamento de gasto à conta
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Objetivo
@@ -812,52 +836,76 @@ Não remover imediatamente `paidMonths`; manter compatibilidade e consistência.
 
 ### Critérios de aceite
 
-- [ ] Usuário escolhe conta ao pagar.
-- [ ] Pode informar valor real.
-- [ ] Pode informar data real.
-- [ ] Movimentação é criada.
-- [ ] `paidMonths` permanece consistente.
-- [ ] Total da despesa não é duplicado.
+- [x] Usuário escolhe conta ao pagar.
+- [x] Pode informar valor real.
+- [x] Pode informar data real.
+- [x] Movimentação é criada.
+- [x] `paidMonths` permanece consistente.
+- [x] Total da despesa não é duplicado.
 
 ### Notas de implementação
 
 ```text
 Fluxo:
--
+- `ExpensePayment` registra pagamento mensal com `expenseId`, `monthKey`, `date`, `accountId`, valores previsto/pago, `transactionId` e `createdAt`.
+- `DataContext.payExpense` cria pagamento mensal, reduz `BankAccount.balance` e cria `expense_payment`.
+- `GastosPage` e `PlanejamentoPage` abrem modal para informar conta, data e valor ao pagar.
+- Estornar pagamento permanece fora do escopo desta etapa.
 
 Compatibilidade paidMonths:
--
+- `paidMonths[monthKey] = true` continua sendo a fonte de status pago/pendente para o motor mensal.
+- `ExpensePayment` guarda a razão bancária do pagamento sem substituir `paidMonths`.
+- `togglePaidMonth` permanece disponível para compatibilidade, mas as UIs de pagamento alteradas usam `payExpense`.
+- O total mensal de despesas continua calculado pelas regras atuais, sem somar `expensePayments`.
 
 Arquivos:
--
+- `src/lib/types.ts`
+- `src/lib/seed.ts`
+- `src/lib/storage.ts`
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/lib/finance/dataQualityRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/GastosPage.tsx`
+- `src/pages/PlanejamentoPage.tsx`
+- `test/finance.test.ts`
+- `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md`
 ```
 
 ---
 
 ## ETAPA 10 — Estornar pagamento de gasto
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Critérios de aceite
 
-- [ ] Saldo retorna.
-- [ ] Gasto volta a pendente.
-- [ ] Histórico preservado.
-- [ ] Estorno idempotente.
-- [ ] Nenhuma despesa duplicada.
+- [x] Saldo retorna.
+- [x] Gasto volta a pendente.
+- [x] Histórico preservado.
+- [x] Estorno idempotente.
+- [x] Nenhuma despesa duplicada.
 
 ### Notas de implementação
 
 ```text
 Fluxo:
--
+- `createExpensePaymentReversalTransaction` cria `reversal` da `expense_payment` original.
+- `DataContext.undoExpensePayment` remove o `ExpensePayment`, limpa `paidMonths[monthKey]`, restaura `paid` em gasto pontual e devolve saldo em `BankAccount.balance`.
+- `GastosPage` e `PlanejamentoPage` alternam o botão de status: pendente abre pagamento, pago desfaz pagamento.
+- O ledger preserva pagamento original e estorno.
 
 Arquivos:
--
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/GastosPage.tsx`
+- `src/pages/PlanejamentoPage.tsx`
+- `test/finance.test.ts`
+- `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md`
 
 Testes:
--
+- Estorno de pagamento mensal de gasto restaura saldo por ledger.
+- Estorno de pagamento mensal de gasto é idempotente após reversão criada.
 ```
 
 ---
@@ -1587,6 +1635,10 @@ Adicionar uma linha ao finalizar cada etapa.
 | 2026-08-31 | Etapa 04 — Calcular saldo por ledger | Concluído | Adicionados cálculos de saldo reconstruível por conta e total, além de comparações para detectar divergências contra `BankAccount.balance`, sem alterar fluxo mensal ou projeção atual. | `src/lib/finance/accountTransactionRules.ts`, `test/finance.test.ts`, `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md` |
 | 2026-08-31 | Etapa 05 — Criar conciliação de saldo | Concluído | Fluxo de atualização de saldo virou conciliação explícita: exibe saldo por ledger, saldo informado e diferença; ao confirmar, cria `manual_adjustment`, snapshot e atualiza `BankAccount.balance`. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ContasPage.tsx`, `test/finance.test.ts`, `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md` |
 | 2026-08-31 | Etapa 06 — Vincular receita à conta destino | Concluído | Receitas passam a aceitar vínculo opcional `defaultAccountId`, com seleção na UI, migração compatível e alerta para conta removida, sem alterar o motor mensal. | `src/lib/types.ts`, `src/lib/storage.ts`, `src/lib/finance/dataQualityRules.ts`, `src/pages/ReceitasPage.tsx`, `test/finance.test.ts`, `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md` |
+| 2026-08-31 | Etapa 07 — Criar recebimento mensal de receita | Concluído | Criado `IncomeReceipt` mensal e ação de recebimento que gera `income_receipt`, incrementa saldo da conta escolhida e mantém receita prevista sem duplicação no motor mensal. | `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/storage.ts`, `src/lib/finance/accountTransactionRules.ts`, `src/lib/finance/dataQualityRules.ts`, `src/store/DataContext.tsx`, `src/pages/ReceitasPage.tsx`, `test/finance.test.ts`, `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md` |
+| 2026-08-31 | Etapa 08 — Permitir desfazer recebimento | Concluído | Recebimentos mensais podem ser desfeitos com remoção do estado mensal, criação de `reversal`, restauração do saldo da conta e proteção contra estorno duplicado. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ReceitasPage.tsx`, `test/finance.test.ts`, `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md` |
+| 2026-08-31 | Etapa 09 — Vincular pagamento de gasto à conta | Concluído | Criado `ExpensePayment` mensal e ação de pagamento que exige conta/data/valor, gera `expense_payment`, reduz saldo da conta e mantém `paidMonths` consistente sem duplicar despesas. | `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/storage.ts`, `src/lib/finance/accountTransactionRules.ts`, `src/lib/finance/dataQualityRules.ts`, `src/store/DataContext.tsx`, `src/pages/GastosPage.tsx`, `src/pages/PlanejamentoPage.tsx`, `test/finance.test.ts`, `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md` |
+| 2026-08-31 | Etapa 10 — Estornar pagamento de gasto | Concluído | Pagamentos mensais de gasto podem ser desfeitos com remoção do estado mensal, criação de `reversal`, limpeza de `paidMonths`, restauração do saldo da conta e proteção contra estorno duplicado. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/GastosPage.tsx`, `src/pages/PlanejamentoPage.tsx`, `test/finance.test.ts`, `PLANO_FLUXO_CAIXA_CONTAS_NEXO.md` |
 
 ---
 

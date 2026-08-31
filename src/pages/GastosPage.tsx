@@ -66,10 +66,11 @@ function totalInstallments(exp: Expense): number {
 }
 
 export function GastosPage() {
-  const { data, addExpense, updateExpense, deleteExpense, duplicateExpense, togglePaidMonth, isExpensePaidForMonth, deleteExpenseMonth, addCategory } = useData();
+  const { data, addExpense, updateExpense, deleteExpense, duplicateExpense, payExpense, undoExpensePayment, isExpensePaidForMonth, deleteExpenseMonth, addCategory } = useData();
   const { selectedMonth } = useMonth();
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
   const [editing, setEditing] = useState<Expense | null>(null);
+  const [paying, setPaying] = useState<Expense | null>(null);
   const [deleteMode, setDeleteMode] = useState<DeleteMode>(null);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -83,6 +84,11 @@ export function GastosPage() {
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'description',
     direction: 'asc',
+  });
+  const [paymentForm, setPaymentForm] = useState({
+    date: '',
+    amount: 0,
+    accountId: '',
   });
 
   const [form, setForm] = useState<FormState>({
@@ -253,6 +259,48 @@ export function GastosPage() {
       setNewCategory('');
       setShowAddCategory(false);
     }
+  };
+
+  const accountOptions = useMemo(() => [
+    { value: '', label: 'Selecione a conta' },
+    ...data.bankAccounts.map((account) => ({
+      value: account.id,
+      label: `${account.name} · ${account.bank}`,
+    })),
+  ], [data.bankAccounts]);
+
+  const dateForDueDay = (monthKey: string, dueDay: number): string => {
+    const [year, month] = monthKey.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const day = Math.min(Math.max(dueDay, 1), lastDay);
+    return `${monthKey}-${String(day).padStart(2, '0')}`;
+  };
+
+  const getExpenseAmount = (expense: Expense): number => {
+    return getActiveVigencia(expense.vigencias, selectedMonth)?.amount ?? 0;
+  };
+
+  const openPayment = (expense: Expense) => {
+    if (isExpensePaidForMonth(expense, selectedMonth)) return;
+    setPaying(expense);
+    setPaymentForm({
+      date: dateForDueDay(selectedMonth, expense.dueDay),
+      amount: getExpenseAmount(expense),
+      accountId: data.bankAccounts[0]?.id ?? '',
+    });
+  };
+
+  const savePayment = () => {
+    if (!paying || !paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0) return;
+    payExpense({
+      expenseId: paying.id,
+      monthKey: selectedMonth,
+      date: paymentForm.date,
+      accountId: paymentForm.accountId,
+      expectedAmount: getExpenseAmount(paying),
+      paidAmount: paymentForm.amount,
+    });
+    setPaying(null);
   };
 
   const handleDeleteConfirm = () => {
@@ -446,7 +494,7 @@ export function GastosPage() {
                       <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(amount)}</td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => togglePaidMonth(exp.id, selectedMonth)}
+                          onClick={() => (isPaid ? undoExpensePayment(exp.id, selectedMonth) : openPayment(exp))}
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${isPaid ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}
                         >
                           {isPaid ? <><Check size={12} /> Pago</> : <><X size={12} /> Pendente</>}
@@ -624,6 +672,28 @@ export function GastosPage() {
 
             <TextArea label="Observação" value={form.note} onChange={(v) => setForm({ ...form, note: v })} />
             {/* Hidden submit button to enable Enter-to-submit */}
+            <button type="submit" className="hidden" aria-hidden="true" />
+          </form>
+        )}
+      </Modal>
+
+      <Modal open={paying !== null} onClose={() => setPaying(null)} title="Registrar pagamento" footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setPaying(null)}>Cancelar</Button>
+          <Button onClick={savePayment} disabled={!paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0}>
+            Pagar
+          </Button>
+        </div>
+      }>
+        {paying && (
+          <form onSubmit={(e) => { e.preventDefault(); savePayment(); }} className="space-y-3">
+            <div className="p-3 bg-rose-50 rounded-lg">
+              <p className="text-sm font-semibold text-rose-700">{paying.description}</p>
+              <p className="text-xs text-gray-500">Previsto: {formatCurrency(getExpenseAmount(paying))} · Dia {paying.dueDay}</p>
+            </div>
+            <Input label="Data paga" type="date" value={paymentForm.date} onChange={(v) => setPaymentForm({ ...paymentForm, date: v })} required />
+            <CurrencyInput label="Valor pago" value={paymentForm.amount} onChange={(v) => setPaymentForm({ ...paymentForm, amount: v })} required />
+            <Select label="Conta" value={paymentForm.accountId} onChange={(v) => setPaymentForm({ ...paymentForm, accountId: v })} options={accountOptions} required />
             <button type="submit" className="hidden" aria-hidden="true" />
           </form>
         )}
