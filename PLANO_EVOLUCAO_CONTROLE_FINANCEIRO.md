@@ -1223,7 +1223,7 @@ Testes:
 
 ## ETAPA 13 — Revisar página de Cartões como tela de detalhe
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -1245,22 +1245,34 @@ Garantir que informações retiradas da Home estejam bem organizadas em Cartões
 
 ### Critérios de aceite
 
-- [ ] Nenhuma informação útil removida da Home fica perdida.
-- [ ] Cartões passa a ser claramente o local de detalhes.
-- [ ] Resumo aparece antes do detalhamento.
-- [ ] Informações agrupadas por cartão/titular.
+- [x] Nenhuma informação útil removida da Home fica perdida.
+- [x] Cartões passa a ser claramente o local de detalhes.
+- [x] Resumo aparece antes do detalhamento.
+- [x] Informações agrupadas por cartão/titular.
 
 ### Notas de implementação
 
 ```text
 Seções:
--
+- Resumo geral de cartões preservado no topo com fatura/renda, parcelas futuras/renda e limite utilizado.
+- Cards passaram a ser agrupados por titular, cada grupo com resumo próprio antes dos cartões.
+- Calendário de parcelas futuras mantido como visão consolidada.
+- Detalhe do cartão mantém fatura atual, próxima fatura, maior fatura, limite, parcelas futuras e compras.
 
 Mudanças:
--
+- Visão geral de Cartões agora organiza informações por titular.
+- Cada titular exibe fatura atual, próxima fatura, limite disponível, parcelas futuras e limite comprometido.
+- Cards individuais continuam abrindo a tela de detalhe com projeção de faturas e compras que formam cada fatura.
+- Cálculos continuam vindo de `getCardCommitmentSummary`, `cardUtilization`, `cardProjection`, `cardInvoiceDetail` e `getFutureInstallmentCalendar`.
 
 Arquivos:
--
+- src/pages/CartoesPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1797,6 +1809,7 @@ Adicionar uma linha sempre que uma etapa for concluída.
 | 2026-08-29 | Etapa 10 — Reorganizar ordem final do Dashboard | Concluído | Dashboard reorganizado na hierarquia final com resumo do mês, alertas no topo, Cartões + Próximos meses, ranking + saúde financeira e gráfico principal. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 11 — Criar textos contextuais curtos | Concluído | Cards principais, Cartões e Próximos meses receberam frases curtas de contexto sem expor fórmulas na Home. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 12 — Criar tooltips para conceitos financeiros | Concluído | Tooltips financeiros foram padronizados com textos curtos, quebra de linha, limite responsivo, suporte a foco e semântica acessível. | src/components/ui.tsx, src/pages/DashboardPage.tsx |
+| 2026-08-31 | Etapa 13 — Revisar página de Cartões como tela de detalhe | Concluído | Página Cartões passou a organizar cartões por titular com resumo agregado antes dos detalhes individuais, mantendo faturas, limites, parcelas futuras, calendário e compras no fluxo de detalhe. | src/pages/CartoesPage.tsx |
 
 ---
 

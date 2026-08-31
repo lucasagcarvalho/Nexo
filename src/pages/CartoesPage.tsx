@@ -26,6 +26,46 @@ export function CartoesPage() {
   const selectedCard = data.cards.find((c) => c.id === selectedCardId);
   const commitmentSummary = useMemo(() => getCardCommitmentSummary(data, selectedMonth), [data, selectedMonth]);
   const installmentCalendar = useMemo(() => getFutureInstallmentCalendar(data, selectedMonth, 24), [data, selectedMonth]);
+  const holderGroups = useMemo(() => {
+    const groups = new Map<string, {
+      holder: string;
+      cards: CreditCard[];
+      totalLimit: number;
+      committedLimit: number;
+      availableLimit: number;
+      currentInvoice: number;
+      nextInvoice: number;
+      futureInstallments: number;
+      highestInvoiceNextSixMonths: number;
+    }>();
+
+    for (const card of data.cards) {
+      const holder = card.holder || 'Sem titular';
+      const indicators = commitmentSummary.cards.find((item) => item.cardId === card.id);
+      const current = groups.get(holder) ?? {
+        holder,
+        cards: [],
+        totalLimit: 0,
+        committedLimit: 0,
+        availableLimit: 0,
+        currentInvoice: 0,
+        nextInvoice: 0,
+        futureInstallments: 0,
+        highestInvoiceNextSixMonths: 0,
+      };
+      current.cards.push(card);
+      current.totalLimit += indicators?.limit ?? card.limit;
+      current.committedLimit += indicators?.committedLimit ?? 0;
+      current.availableLimit += indicators?.availableLimit ?? card.limit;
+      current.currentInvoice += indicators?.currentInvoice ?? 0;
+      current.nextInvoice += indicators?.nextInvoice ?? 0;
+      current.futureInstallments += indicators?.futureInstallments ?? 0;
+      current.highestInvoiceNextSixMonths = Math.max(current.highestInvoiceNextSixMonths, indicators?.highestInvoiceNextSixMonths ?? 0);
+      groups.set(holder, current);
+    }
+
+    return Array.from(groups.values()).sort((a, b) => a.holder.localeCompare(b.holder));
+  }, [data.cards, commitmentSummary.cards]);
 
   if (selectedCard) {
     return <CardDetail card={selectedCard} onBack={() => setSelectedCardId(null)} />;
@@ -90,49 +130,82 @@ export function CartoesPage() {
           <EmptyState icon={<CreditCardIcon size={48} />} title="Nenhum cartão cadastrado" message="Adicione seu primeiro cartão de crédito para começar a controlar suas faturas e compras parceladas." action={<Button onClick={openAddCard}><Plus size={16} className="inline mr-1" /> Adicionar primeiro cartão</Button>} />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data.cards.map((card) => {
-            const util = cardUtilization(data, card, selectedMonth);
-            const indicators = commitmentSummary.cards.find((item) => item.cardId === card.id);
-            const utilPct = card.limit > 0 ? (util.used / card.limit) * 100 : 0;
-            const color = utilPct > 80 ? 'red' : utilPct > 50 ? 'yellow' : 'green';
+        <div className="space-y-4">
+          {holderGroups.map((group) => {
+            const groupUtilPct = group.totalLimit > 0 ? (group.committedLimit / group.totalLimit) * 100 : 0;
+            const groupColor = groupUtilPct > 80 ? 'red' : groupUtilPct > 50 ? 'yellow' : 'green';
             return (
-              <Card key={card.id} className="p-4 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedCardId(card.id)}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: card.color }} />
+              <section key={group.holder} className="space-y-3">
+                <Card className="p-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div>
-                      <h3 className="font-semibold text-gray-900">{card.name}</h3>
-                      <p className="text-xs text-gray-400">{card.bank} · {card.holder}</p>
+                      <p className="text-xs text-gray-400">Titular</p>
+                      <h2 className="text-lg font-bold text-gray-900">{group.holder}</h2>
+                      <p className="text-xs text-gray-400 mt-1">{group.cards.length} cartão(ões)</p>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1 min-w-[260px]">
+                      <div><p className="text-xs text-gray-400">Fatura atual</p><p className="text-sm font-bold text-gray-900">{formatCurrency(group.currentInvoice)}</p></div>
+                      <div><p className="text-xs text-gray-400">Próxima fatura</p><p className="text-sm font-bold text-gray-900">{formatCurrency(group.nextInvoice)}</p></div>
+                      <div><p className="text-xs text-gray-400">Disponível</p><p className="text-sm font-bold text-emerald-600">{formatCurrency(group.availableLimit)}</p></div>
+                      <div><p className="text-xs text-gray-400">Parcelas futuras</p><p className="text-sm font-bold text-amber-600">{formatCurrency(group.futureInstallments)}</p></div>
                     </div>
                   </div>
-                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <IconButton icon={<Edit2 size={14} />} label="Editar cartão" onClick={() => openEditCard(card)} />
-                    <IconButton icon={<Trash2 size={14} />} label="Excluir cartão" variant="danger" onClick={() => setConfirmDeleteCard(card.id)} />
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-gray-400">Limite comprometido</span>
+                      <span className="text-gray-600">{formatCurrency(group.committedLimit)} de {formatCurrency(group.totalLimit)} ({groupUtilPct.toFixed(0)}%)</span>
+                    </div>
+                    <ProgressBar value={group.committedLimit} max={group.totalLimit} color={groupColor} />
                   </div>
+                </Card>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {group.cards.map((card) => {
+                    const util = cardUtilization(data, card, selectedMonth);
+                    const indicators = commitmentSummary.cards.find((item) => item.cardId === card.id);
+                    const utilPct = card.limit > 0 ? (util.used / card.limit) * 100 : 0;
+                    const color = utilPct > 80 ? 'red' : utilPct > 50 ? 'yellow' : 'green';
+                    return (
+                      <Card key={card.id} className="p-4 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedCardId(card.id)}>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 rounded-full" style={{ backgroundColor: card.color }} />
+                            <div>
+                              <h3 className="font-semibold text-gray-900">{card.name}</h3>
+                              <p className="text-xs text-gray-400">{card.bank} · {card.holder}</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                            <IconButton icon={<Edit2 size={14} />} label="Editar cartão" onClick={() => openEditCard(card)} />
+                            <IconButton icon={<Trash2 size={14} />} label="Excluir cartão" variant="danger" onClick={() => setConfirmDeleteCard(card.id)} />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm"><span className="text-gray-400">Limite</span><span className="font-medium text-gray-700">{formatCurrency(card.limit)}</span></div>
+                          <div className="flex justify-between text-sm"><span className="text-gray-400">Fatura de {formatMonthBR(selectedMonth)}</span><span className="font-medium text-gray-900">{formatCurrency(util.currentInvoice)}</span></div>
+                          <InvoiceStatusBadge data={data} card={card} monthKey={selectedMonth} invoiceAmount={util.currentInvoice} />
+                          {util.currentInvoice > 0 && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleInvoicePaid(card.id, selectedMonth); }}
+                              className={`w-full text-sm font-medium py-2 px-3 rounded-lg transition-colors ${isInvoicePaid(card.id, selectedMonth) ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
+                            >
+                              {isInvoicePaid(card.id, selectedMonth) ? <><Circle size={14} className="inline mr-1" /> Desmarcar pagamento</> : <><CheckCircle2 size={14} className="inline mr-1" /> Marcar fatura como paga</>}
+                            </button>
+                          )}
+                          <div className="flex justify-between text-sm"><span className="text-gray-400">Próxima fatura</span><span className="font-medium text-gray-700">{formatCurrency(util.nextInvoice)}</span></div>
+                          <div className="flex justify-between text-sm"><span className="text-gray-400">Parcelado futuro</span><span className="font-medium text-amber-600">{formatCurrency(util.futureInstallments)}</span></div>
+                          <div className="flex justify-between text-sm"><span className="text-gray-400">Maior fatura 6m</span><span className="font-medium text-blue-600">{formatCurrency(indicators?.highestInvoiceNextSixMonths ?? 0)}</span></div>
+                          <div className="pt-1">
+                            <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Utilizado</span><span className="text-gray-600">{formatCurrency(util.used)} ({utilPct.toFixed(0)}%)</span></div>
+                            <ProgressBar value={util.used} max={card.limit} color={color} />
+                          </div>
+                          <div className="flex justify-between text-sm pt-1"><span className="text-gray-400">Disponível</span><span className="font-bold text-emerald-600">{formatCurrency(util.available)}</span></div>
+                        </div>
+                      </Card>
+                    );
+                  })}
                 </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">Limite</span><span className="font-medium text-gray-700">{formatCurrency(card.limit)}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">Fatura de {formatMonthBR(selectedMonth)}</span><span className="font-medium text-gray-900">{formatCurrency(util.currentInvoice)}</span></div>
-                  <InvoiceStatusBadge data={data} card={card} monthKey={selectedMonth} invoiceAmount={util.currentInvoice} />
-                  {util.currentInvoice > 0 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleInvoicePaid(card.id, selectedMonth); }}
-                      className={`w-full text-sm font-medium py-2 px-3 rounded-lg transition-colors ${isInvoicePaid(card.id, selectedMonth) ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
-                    >
-                      {isInvoicePaid(card.id, selectedMonth) ? <><Circle size={14} className="inline mr-1" /> Desmarcar pagamento</> : <><CheckCircle2 size={14} className="inline mr-1" /> Marcar fatura como paga</>}
-                    </button>
-                  )}
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">Próxima fatura</span><span className="font-medium text-gray-700">{formatCurrency(util.nextInvoice)}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">Parcelado futuro</span><span className="font-medium text-amber-600">{formatCurrency(util.futureInstallments)}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">Maior fatura 6m</span><span className="font-medium text-blue-600">{formatCurrency(indicators?.highestInvoiceNextSixMonths ?? 0)}</span></div>
-                  <div className="pt-1">
-                    <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Utilizado</span><span className="text-gray-600">{formatCurrency(util.used)} ({utilPct.toFixed(0)}%)</span></div>
-                    <ProgressBar value={util.used} max={card.limit} color={color} />
-                  </div>
-                  <div className="flex justify-between text-sm pt-1"><span className="text-gray-400">Disponível</span><span className="font-bold text-emerald-600">{formatCurrency(util.available)}</span></div>
-                </div>
-              </Card>
+              </section>
             );
           })}
         </div>
