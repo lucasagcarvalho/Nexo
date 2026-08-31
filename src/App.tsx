@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from '@/store/AuthContext';
 import { MonthProvider } from '@/store/MonthContext';
 import { DataProvider } from '@/store/DataContext';
@@ -19,6 +19,12 @@ import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
 function AppContent() {
   const { user, loading } = useAuth();
   const [page, setPage] = useState<PageId>('dashboard');
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [page]);
 
   if (loading) {
     return (
