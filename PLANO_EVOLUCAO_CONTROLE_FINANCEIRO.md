@@ -1791,6 +1791,16 @@ Testes:
 
 ---
 
+# MELHORIAS AVULSAS FORA DO PLANO
+
+Demandas implementadas fora da sequência de etapas UX.
+
+| Data | Melhoria | Status | Resumo | Arquivos |
+|---|---|---|---|---|
+| 2026-08-31 | Backup do banco | Concluído | Configurações ganhou exportação completa do banco em JSON e importação com confirmação antes de substituir os dados atuais. A importação aceita backup exportado pelo NEXO ou JSON cru de `AppData`, reutilizando a migração existente. | src/pages/ConfiguracoesPage.tsx, src/store/DataContext.tsx, src/lib/storage.ts |
+
+---
+
 # HISTÓRICO DE EXECUÇÃO
 
 Adicionar uma linha sempre que uma etapa for concluída.
