@@ -1279,7 +1279,7 @@ Testes:
 
 ## ETAPA 14 — Revisar página de Projeção como tela de futuro
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -1301,29 +1301,40 @@ Concentrar informações futuras que não precisam ficar na Home.
 
 ### Critérios de aceite
 
-- [ ] Projeção é o local principal de análise futura.
-- [ ] Home apenas resume.
-- [ ] Usuário consegue navegar da Home para o detalhe.
-- [ ] Dados permanecem centralizados.
+- [x] Projeção é o local principal de análise futura.
+- [x] Home apenas resume.
+- [x] Usuário consegue navegar da Home para o detalhe.
+- [x] Dados permanecem centralizados.
 
 ### Notas de implementação
 
 ```text
 Informações concentradas:
--
+- Resumos de 3, 6 e 12 meses preservados pelo motor financeiro.
+- Projeção ganhou leitura principal de 12 meses com opção de alternar para 24 meses, 5 anos ou 30 anos.
+- Topo passou a destacar saldo em 12 meses, risco futuro, maior fatura e maior comprometimento.
+- Horizonte selecionado mostra saldo projetado, mês mais apertado, meses negativos, receitas, saídas e saldo acumulado.
+- Gráficos e tabela completa respeitam o horizonte selecionado.
+- Detalhe por mês continua disponível ao clicar na tabela.
 
 Links:
--
+- Home já mantém CTA "Ver projeção" no bloco Próximos meses.
 
 Arquivos:
--
+- src/pages/ProjecaoPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
 
 ## ETAPA 15 — Revisar página de Dívidas
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -1346,21 +1357,33 @@ No máximo um alerta relacionado a dívida quando for relevante.
 
 ### Critérios de aceite
 
-- [ ] Dívidas não ocupam espaço permanente na Home.
-- [ ] Alertas de dívida continuam aparecendo quando necessário.
-- [ ] Página específica possui visão suficiente.
+- [x] Dívidas não ocupam espaço permanente na Home.
+- [x] Alertas de dívida continuam aparecendo quando necessário.
+- [x] Página específica possui visão suficiente.
 
 ### Notas de implementação
 
 ```text
 Mudanças:
--
+- Topo da página Dívidas passou a mostrar saldo devedor, parcelas mensais, número de dívidas e previsão de quitação.
+- Página ganhou resumo por responsável com saldo, parcelas mensais e quitação prevista.
+- Página ganhou prioridade de acompanhamento ordenada por juros, parcela mensal e saldo.
+- Página ganhou resumo por status para Em aberto, Negociação, Parcelada e Quitada.
+- Cards individuais mantêm saldo atual, parcela mensal, parcelas restantes, término estimado, juros, vencimento e responsável.
+- Linha antiga de "Saldo original: Não informado" foi removida por não agregar informação real.
 
 Home:
--
+- Home não recebeu bloco permanente de dívidas.
+- Alertas e detalhes de saídas continuam consumindo os dados centralizados quando dívidas impactam o mês.
 
 Arquivos:
--
+- src/pages/DividasPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1369,7 +1392,7 @@ Arquivos:
 
 ## ETAPA 16 — Padronizar "Ver detalhes"
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -1392,29 +1415,38 @@ Evitar vários tipos de CTA para a mesma intenção.
 
 ### Critérios de aceite
 
-- [ ] Textos de navegação são consistentes.
-- [ ] Botões secundários têm o mesmo estilo.
-- [ ] Usuário entende para onde será levado.
-- [ ] Nenhum CTA redundante.
+- [x] Textos de navegação são consistentes.
+- [x] Botões secundários têm o mesmo estilo.
+- [x] Usuário entende para onde será levado.
+- [x] Nenhum CTA redundante.
 
 ### Notas de implementação
 
 ```text
 Padrão:
--
+- CTAs secundários da Home seguem o formato "Ver <destino>".
+- Textos aplicados: Ver cartões, Ver projeção, Ver categorias e Ver análise.
+- "Ver todos" do ranking foi substituído por "Ver categorias" para explicitar o destino.
 
 Componentes:
--
+- Criado `DashboardLink` local para padronizar estilo, foco acessível e ícone de seta.
+- Links secundários usam o mesmo tamanho, cor, hover, foco e alinhamento.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
 
 ## ETAPA 17 — Criar modo resumido e expandido opcional
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P3
 
 ### Objetivo
@@ -1442,22 +1474,34 @@ Não persistir tudo aberto por padrão.
 
 ### Critérios de aceite
 
-- [ ] Dashboard abre em modo limpo.
-- [ ] Blocos podem expandir quando útil.
-- [ ] Estado visual não interfere nos cálculos.
-- [ ] Não cria excesso de animações.
+- [x] Dashboard abre em modo limpo.
+- [x] Blocos podem expandir quando útil.
+- [x] Estado visual não interfere nos cálculos.
+- [x] Não cria excesso de animações.
 
 ### Notas de implementação
 
 ```text
 Blocos expansíveis:
--
+- Cartões: mostra fatura do mês e meta por padrão; % da renda, parcelas futuras e barra da meta ficam em "Mostrar mais".
+- Próximos meses: mostra meses negativos por padrão; menor saldo previsto e maior comprometimento ficam em "Mostrar mais".
+- Saúde financeira: mostra dois indicadores por padrão; terceiro indicador fica em "Mostrar mais".
+- Fluxo financeiro: gráfico fica recolhido por padrão e pode ser aberto no próprio bloco.
 
 Estado:
--
+- Estado local `expandedBlocks` controla apenas visibilidade dos blocos no Dashboard.
+- Nenhum cálculo financeiro foi alterado.
+- Não há persistência dos blocos abertos; a Home sempre inicia resumida.
+- Expansão usa botões simples com chevron, sem animações adicionais.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1466,7 +1510,7 @@ Arquivos:
 
 ## ETAPA 18 — Reduzir bordas, caixas e ruído visual
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Problema
@@ -1488,22 +1532,34 @@ Usar containers apenas quando realmente agrupam informação.
 
 ### Critérios de aceite
 
-- [ ] Menos containers visuais.
-- [ ] Grupos continuam compreensíveis.
-- [ ] Hierarquia depende mais de tipografia/espaço que de borda.
-- [ ] Interface fica mais leve.
+- [x] Menos containers visuais.
+- [x] Grupos continuam compreensíveis.
+- [x] Hierarquia depende mais de tipografia/espaço que de borda.
+- [x] Interface fica mais leve.
 
 ### Notas de implementação
 
 ```text
 Componentes ajustados:
--
+- `MetricItem` removeu borda interna e usa fundo sutil.
+- `CategoryRankingRow` passou a funcionar como linha com hover, sem aparência de card dentro de card.
+- `HealthIndicatorCard` removeu borda interna e reduziu o peso visual.
+- `DrillDownList`, `CategorySummary` e `DetailRow` passaram a usar separadores simples em vez de caixas repetidas.
 
 Padrão visual:
--
+- Containers principais continuam agrupando seções.
+- Itens internos usam espaçamento, tipografia, separadores e fundo leve.
+- Radius interno reduzido para `rounded-md`.
+- Não foram adicionadas animações ou novas cores dominantes.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1820,6 +1876,11 @@ Adicionar uma linha sempre que uma etapa for concluída.
 | 2026-08-29 | Etapa 11 — Criar textos contextuais curtos | Concluído | Cards principais, Cartões e Próximos meses receberam frases curtas de contexto sem expor fórmulas na Home. | src/pages/DashboardPage.tsx |
 | 2026-08-29 | Etapa 12 — Criar tooltips para conceitos financeiros | Concluído | Tooltips financeiros foram padronizados com textos curtos, quebra de linha, limite responsivo, suporte a foco e semântica acessível. | src/components/ui.tsx, src/pages/DashboardPage.tsx |
 | 2026-08-31 | Etapa 13 — Revisar página de Cartões como tela de detalhe | Concluído | Página Cartões passou a organizar cartões por titular com resumo agregado antes dos detalhes individuais, mantendo faturas, limites, parcelas futuras, calendário e compras no fluxo de detalhe. | src/pages/CartoesPage.tsx |
+| 2026-08-31 | Etapa 14 — Revisar página de Projeção como tela de futuro | Concluído | Projeção passou a concentrar análise futura com resumo de 12 meses, risco futuro, maior fatura, maior comprometimento e seletor de horizonte para gráficos e tabela. | src/pages/ProjecaoPage.tsx |
+| 2026-08-31 | Etapa 15 — Revisar página de Dívidas | Concluído | Página Dívidas passou a concentrar análise de endividamento com resumo por responsável, prioridade de acompanhamento, status das dívidas e cards individuais mais completos. | src/pages/DividasPage.tsx |
+| 2026-08-31 | Etapa 16 — Padronizar "Ver detalhes" | Concluído | CTAs secundários da Home foram padronizados como "Ver <destino>" com estilo único, seta e foco acessível. | src/pages/DashboardPage.tsx |
+| 2026-08-31 | Etapa 17 — Criar modo resumido e expandido opcional | Concluído | Dashboard passou a abrir mais limpo, com Cartões, Próximos meses, Saúde financeira e gráfico em modo resumido e expansão opcional por bloco. | src/pages/DashboardPage.tsx |
+| 2026-08-31 | Etapa 18 — Reduzir bordas, caixas e ruído visual | Concluído | Itens internos do Dashboard perderam bordas/caixas redundantes e passaram a usar fundo sutil, espaçamento e separadores simples. | src/pages/DashboardPage.tsx |
 
 ---
 

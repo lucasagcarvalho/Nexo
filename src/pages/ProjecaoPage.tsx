@@ -11,54 +11,102 @@ export function ProjecaoPage() {
   const { data } = useData();
   const { selectedMonth } = useMonth();
   const [detailMonth, setDetailMonth] = useState<MonthProjection | null>(null);
+  const [visibleRange, setVisibleRange] = useState<12 | 24 | 60 | 360>(12);
   const projection = useMemo(() => projectMonths(data, 360, selectedMonth), [data, selectedMonth]);
   const months = projection.months;
+  const visibleMonths = useMemo(() => months.slice(0, visibleRange), [months, visibleRange]);
   const horizonSummaries = useMemo(() => getProjectionHorizonSummaries(data, projection), [data, projection]);
+  const twelveMonthProjectedBalance = months[11]?.projectedAccountsBalance ?? 0;
 
-  const flowData = months.map((m) => ({
+  const flowData = visibleMonths.map((m) => ({
     month: monthShort(m.monthKey),
     Receitas: Math.round(m.income),
     Despesas: Math.round(m.totalExpenses),
     Saldo: Math.round(m.balance),
   }));
 
-  const accumulatedData = months.map((m) => ({
+  const accumulatedData = visibleMonths.map((m) => ({
     month: monthShort(m.monthKey),
     Acumulado: Math.round(m.accumulatedBalance),
   }));
 
-  const cardData = months.map((m) => ({
+  const cardData = visibleMonths.map((m) => ({
     month: monthShort(m.monthKey),
     Cartões: Math.round(m.cardExpenses),
   }));
 
   const monthsFree = monthsUntilFreeOfInstallments(data, selectedMonth);
-  const negativeMonths = months.filter((m) => m.balance < 0);
-  const tightestMonth = [...months].sort((a, b) => a.balance - b.balance)[0];
+  const negativeMonths = visibleMonths.filter((m) => m.balance < 0 || m.projectedAccountsBalance < 0);
+  const firstNegativeMonth = months.find((m) => m.balance < 0 || m.projectedAccountsBalance < 0);
+  const tightestMonth = [...visibleMonths].sort((a, b) => a.projectedAccountsBalance - b.projectedAccountsBalance)[0];
+  const highestInvoiceMonth = [...visibleMonths].sort((a, b) => b.cardExpenses - a.cardExpenses)[0];
+  const highestCommitmentMonth = [...visibleMonths].sort((a, b) => {
+    const aCommitment = a.income > 0 ? a.totalExpenses / a.income : 0;
+    const bCommitment = b.income > 0 ? b.totalExpenses / b.income : 0;
+    return bCommitment - aCommitment;
+  })[0];
+  const highestCommitmentPercent = highestCommitmentMonth && highestCommitmentMonth.income > 0 ? (highestCommitmentMonth.totalExpenses / highestCommitmentMonth.income) * 100 : 0;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Projeção Financeira</h1>
-        <p className="text-sm text-gray-500">Projeção de até 30 anos (360 meses) a partir de {formatMonthBR(selectedMonth)} · recálculo automático</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Projeção Financeira</h1>
+          <p className="text-sm text-gray-500">Análise futura a partir de {formatMonthBR(selectedMonth)} · 30 anos disponíveis</p>
+        </div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+          {[
+            { value: 12, label: '12m' },
+            { value: 24, label: '24m' },
+            { value: 60, label: '5 anos' },
+            { value: 360, label: '30 anos' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setVisibleRange(option.value as 12 | 24 | 60 | 360)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${visibleRange === option.value ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-3">
-          <div className="flex items-center gap-2 mb-1"><TrendingUp size={14} className="text-emerald-500" /><p className="text-xs text-gray-400">Receita projetada (360m)</p></div>
-          <p className="text-lg font-bold text-emerald-600">{formatCurrency(months.reduce((s, m) => s + m.income, 0))}</p>
+          <div className="flex items-center gap-2 mb-1"><BarChart3 size={14} className="text-blue-500" /><p className="text-xs text-gray-400">Saldo em 12 meses</p></div>
+          <p className={`text-lg font-bold ${twelveMonthProjectedBalance >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>{formatCurrency(twelveMonthProjectedBalance)}</p>
         </Card>
         <Card className="p-3">
-          <div className="flex items-center gap-2 mb-1"><TrendingDown size={14} className="text-rose-500" /><p className="text-xs text-gray-400">Despesas projetadas (360m)</p></div>
-          <p className="text-lg font-bold text-rose-600">{formatCurrency(months.reduce((s, m) => s + m.totalExpenses, 0))}</p>
+          <div className="flex items-center gap-2 mb-1"><AlertTriangle size={14} className="text-rose-500" /><p className="text-xs text-gray-400">Risco futuro</p></div>
+          <p className={`text-lg font-bold ${firstNegativeMonth ? 'text-rose-600' : 'text-emerald-600'}`}>{firstNegativeMonth ? monthLabelShort(firstNegativeMonth.monthKey) : 'Sem risco'}</p>
         </Card>
         <Card className="p-3">
-          <div className="flex items-center gap-2 mb-1"><BarChart3 size={14} className="text-blue-500" /><p className="text-xs text-gray-400">Saldo acumulado</p></div>
-          <p className={`text-lg font-bold ${(months[months.length - 1]?.accumulatedBalance ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(months[months.length - 1]?.accumulatedBalance ?? 0)}</p>
+          <div className="flex items-center gap-2 mb-1"><TrendingDown size={14} className="text-purple-500" /><p className="text-xs text-gray-400">Maior fatura</p></div>
+          <p className="text-lg font-bold text-purple-600">{formatCurrency(highestInvoiceMonth?.cardExpenses ?? 0)}</p>
+          {highestInvoiceMonth && <p className="text-xs text-gray-400 mt-1">{monthLabelShort(highestInvoiceMonth.monthKey)}</p>}
         </Card>
         <Card className="p-3">
-          <div className="flex items-center gap-2 mb-1"><Calendar size={14} className="text-amber-500" /><p className="text-xs text-gray-400">Livre das parcelas em</p></div>
+          <div className="flex items-center gap-2 mb-1"><TrendingUp size={14} className="text-amber-500" /><p className="text-xs text-gray-400">Maior comprometimento</p></div>
+          <p className={`text-lg font-bold ${highestCommitmentPercent >= 90 ? 'text-rose-600' : highestCommitmentPercent >= 75 ? 'text-amber-600' : 'text-gray-900'}`}>{formatPercent(highestCommitmentPercent)}</p>
+          {highestCommitmentMonth && <p className="text-xs text-gray-400 mt-1">{monthLabelShort(highestCommitmentMonth.monthKey)}</p>}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="p-3">
+          <p className="text-xs text-gray-400">Saldo projetado no horizonte</p>
+          <p className={`text-lg font-bold ${(visibleMonths[visibleMonths.length - 1]?.projectedAccountsBalance ?? 0) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>{formatCurrency(visibleMonths[visibleMonths.length - 1]?.projectedAccountsBalance ?? 0)}</p>
+        </Card>
+        <Card className="p-3">
+          <p className="text-xs text-gray-400">Mês mais apertado</p>
+          <p className={`text-lg font-bold ${(tightestMonth?.projectedAccountsBalance ?? 0) >= 0 ? 'text-gray-900' : 'text-rose-600'}`}>{tightestMonth ? monthLabelShort(tightestMonth.monthKey) : '-'}</p>
+          {tightestMonth && <p className="text-xs text-gray-400 mt-1">{formatCurrency(tightestMonth.projectedAccountsBalance)}</p>}
+        </Card>
+        <Card className="p-3">
+          <p className="text-xs text-gray-400">Livre das parcelas em</p>
           <p className="text-lg font-bold text-amber-600">{monthsFree > 0 ? `${monthsFree} meses` : 'Livre'}</p>
         </Card>
       </div>
@@ -68,7 +116,7 @@ export function ProjecaoPage() {
         <Card className="p-4 bg-rose-50 border-rose-200">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle size={18} className="text-rose-500" />
-            <h3 className="text-sm font-semibold text-rose-700">Meses com saldo negativo ({negativeMonths.length})</h3>
+            <h3 className="text-sm font-semibold text-rose-700">Meses de risco no horizonte ({negativeMonths.length})</h3>
           </div>
           <div className="space-y-1">
             {negativeMonths.map((m) => (
@@ -83,13 +131,15 @@ export function ProjecaoPage() {
 
       {tightestMonth && (
         <Card className="p-4">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-3">
             <Calendar size={16} className="text-amber-500" />
-            <h3 className="text-sm font-semibold text-gray-700">Mês mais apertado</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Resumo do horizonte selecionado</h3>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500">{monthLabelShort(tightestMonth.monthKey)}</span>
-            <Badge color={tightestMonth.balance < 0 ? 'red' : 'yellow'}>{formatCurrency(tightestMonth.balance)}</Badge>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <HorizonMetric label="Receitas" value={formatCurrency(visibleMonths.reduce((s, m) => s + m.income, 0))} positive />
+            <HorizonMetric label="Saídas" value={formatCurrency(visibleMonths.reduce((s, m) => s + m.totalExpenses, 0))} negative={visibleMonths.reduce((s, m) => s + m.totalExpenses, 0) > visibleMonths.reduce((s, m) => s + m.income, 0)} />
+            <HorizonMetric label="Saldo acumulado" value={formatCurrency(visibleMonths.reduce((s, m) => s + m.balance, 0))} />
+            <HorizonMetric label="Meses negativos" value={String(negativeMonths.length)} negative={negativeMonths.length > 0} />
           </div>
         </Card>
       )}
@@ -108,7 +158,7 @@ export function ProjecaoPage() {
 
       {/* Charts */}
       <Card className="p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Fluxo Financeiro · 360 meses</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Fluxo Financeiro · {visibleRange === 360 ? '30 anos' : `${visibleRange} meses`}</h3>
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={flowData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
@@ -125,7 +175,7 @@ export function ProjecaoPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Saldo Acumulado · 360 meses</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Saldo Acumulado · {visibleRange === 360 ? '30 anos' : `${visibleRange} meses`}</h3>
           <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={accumulatedData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
@@ -138,7 +188,7 @@ export function ProjecaoPage() {
         </Card>
 
         <Card className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Faturas de Cartões · 360 meses</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Faturas de Cartões · {visibleRange === 360 ? '30 anos' : `${visibleRange} meses`}</h3>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={cardData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
@@ -153,7 +203,7 @@ export function ProjecaoPage() {
 
       {/* Full table */}
       <Card className="overflow-hidden">
-        <h3 className="text-sm font-semibold text-gray-700 p-4 pb-2">Tabela Completa · 360 meses</h3>
+        <h3 className="text-sm font-semibold text-gray-700 p-4 pb-2">Tabela completa · {visibleRange === 360 ? '30 anos' : `${visibleRange} meses`}</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -174,7 +224,7 @@ export function ProjecaoPage() {
               </tr>
             </thead>
             <tbody>
-              {months.map((m) => {
+              {visibleMonths.map((m) => {
                 const status = getMonthHealthStatus(m);
                 const commitmentPercent = m.income > 0 ? (m.totalExpenses / m.income) * 100 : 0;
                 return (

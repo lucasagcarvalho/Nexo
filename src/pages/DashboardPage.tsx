@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, Info, AlertTriangle, LineChart as LineChartIcon, Banknote, ReceiptText } from 'lucide-react';
+import { TrendingUp, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, Info, AlertTriangle, LineChart as LineChartIcon, Banknote, ReceiptText, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
@@ -13,6 +13,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const { data, isInvoicePaid } = useData();
   const { selectedMonth } = useMonth();
   const [detailModal, setDetailModal] = useState<{ title: string; content: React.ReactNode } | null>(null);
+  const [expandedBlocks, setExpandedBlocks] = useState({
+    cards: false,
+    future: false,
+    health: false,
+    chart: false,
+  });
 
   const projection = useMemo(() => projectMonths(data, 24, selectedMonth), [data, selectedMonth]);
   const alerts = useMemo(() => generateAlerts(data, projection), [data, projection]);
@@ -22,6 +28,10 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const current = projection.months[0];
 
   if (!current) return null;
+
+  const toggleBlock = (block: keyof typeof expandedBlocks) => {
+    setExpandedBlocks((prev) => ({ ...prev, [block]: !prev[block] }));
+  };
 
   const cardLimit = getCardMonthlyLimit(data.settings, selectedMonth);
   const cardPct = cardLimit > 0 ? (current.cardExpenses / cardLimit) * 100 : 0;
@@ -224,6 +234,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     || indicator.id === 'fixed-commitment'
     || indicator.id === 'reserve-coverage'
   ));
+  const visibleHealthIndicators = expandedBlocks.health ? homeHealthIndicators : homeHealthIndicators.slice(0, 2);
   const categoryRanking = Object.entries(current.categoryBreakdown)
     .map(([category, value]) => ({ category, value }))
     .filter((item) => item.value > 0)
@@ -317,23 +328,28 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
               </div>
               <p className="mt-1 text-xs text-gray-400">{formatMonthBR(selectedMonth)}</p>
             </div>
-            <div className="flex items-center justify-between mb-3">
-              <button onClick={() => onNavigate('cartoes')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Ver cartões</button>
-            </div>
+            <DashboardLink onClick={() => onNavigate('cartoes')}>Ver cartões</DashboardLink>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <MetricItem label="Fatura do mês" value={formatCurrency(current.cardExpenses)} description={current.cardExpenses > 0 ? 'Valor que entra nas saídas deste mês.' : 'Sem fatura prevista neste mês.'} negative={current.cardExpenses > 0} />
             <MetricItem label="Meta" value={formatCurrency(cardLimit)} description={cardPct > 100 ? 'A fatura passou da meta mensal.' : 'Referência para controlar a fatura.'} />
-            <MetricItem label="% da renda" value={formatPercent(cardIncomePercent)} description={cardIncomePercent >= 35 ? 'Cartões estão pesando na renda.' : 'Mostra o peso dos cartões na renda.'} negative={cardIncomePercent >= 35} />
-            <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} description={current.parcelasFuturas > 0 ? 'Compromisso que já chega nos próximos meses.' : 'Sem parcelas futuras cadastradas.'} negative={current.parcelasFuturas > 0} />
+            {expandedBlocks.cards && (
+              <>
+                <MetricItem label="% da renda" value={formatPercent(cardIncomePercent)} description={cardIncomePercent >= 35 ? 'Cartões estão pesando na renda.' : 'Mostra o peso dos cartões na renda.'} negative={cardIncomePercent >= 35} />
+                <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} description={current.parcelasFuturas > 0 ? 'Compromisso que já chega nos próximos meses.' : 'Sem parcelas futuras cadastradas.'} negative={current.parcelasFuturas > 0} />
+              </>
+            )}
           </div>
-          <div className="mt-3">
-            <div className="mb-2 flex items-center justify-between gap-2 text-xs">
-              <span className="text-gray-400">Uso da meta mensal</span>
-              <Badge color={cardColor}>{formatPercent(cardPct)}</Badge>
+          {expandedBlocks.cards && (
+            <div className="mt-3">
+              <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+                <span className="text-gray-400">Uso da meta mensal</span>
+                <Badge color={cardColor}>{formatPercent(cardPct)}</Badge>
+              </div>
+              <ProgressBar value={current.cardExpenses} max={cardLimit} color={cardColor} />
             </div>
-            <ProgressBar value={current.cardExpenses} max={cardLimit} color={cardColor} />
-          </div>
+          )}
+          <DashboardExpandButton expanded={expandedBlocks.cards} onClick={() => toggleBlock('cards')} />
         </Card>
 
         {/* Bloco 3: próximos meses */}
@@ -346,7 +362,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
               </div>
               <p className="mt-1 text-xs text-gray-400">Visão rápida dos próximos {futureSummary?.months ?? 12} meses</p>
             </div>
-            <button onClick={() => onNavigate('projecao')} className="text-xs font-medium text-blue-600 hover:text-blue-700">Ver projeção</button>
+            <DashboardLink onClick={() => onNavigate('projecao')}>Ver projeção</DashboardLink>
           </div>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-1 gap-2">
             <MetricItem
@@ -356,19 +372,24 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
               negative={(futureSummary?.negativeMonths ?? 0) > 0}
               positive={(futureSummary?.negativeMonths ?? 0) === 0}
             />
-            <MetricItem
-              label="Menor saldo previsto"
-              value={formatCurrency(futureSummary?.lowestProjectedAccountsBalance ?? 0)}
-              description={(futureSummary?.lowestProjectedAccountsBalance ?? 0) < 0 ? 'Saldo pode ficar negativo.' : 'Pior ponto ainda fica positivo.'}
-              negative={(futureSummary?.lowestProjectedAccountsBalance ?? 0) < 0}
-            />
-            <MetricItem
-              label="Maior comprometimento"
-              value={formatPercent(futureSummary?.highestIncomeCommitmentPercent ?? 0)}
-              description={(futureSummary?.highestIncomeCommitmentPercent ?? 0) >= 90 ? 'Pouco espaço de folga no futuro.' : 'Maior pressão prevista sobre a renda.'}
-              negative={(futureSummary?.highestIncomeCommitmentPercent ?? 0) >= 90}
-            />
+            {expandedBlocks.future && (
+              <>
+                <MetricItem
+                  label="Menor saldo previsto"
+                  value={formatCurrency(futureSummary?.lowestProjectedAccountsBalance ?? 0)}
+                  description={(futureSummary?.lowestProjectedAccountsBalance ?? 0) < 0 ? 'Saldo pode ficar negativo.' : 'Pior ponto ainda fica positivo.'}
+                  negative={(futureSummary?.lowestProjectedAccountsBalance ?? 0) < 0}
+                />
+                <MetricItem
+                  label="Maior comprometimento"
+                  value={formatPercent(futureSummary?.highestIncomeCommitmentPercent ?? 0)}
+                  description={(futureSummary?.highestIncomeCommitmentPercent ?? 0) >= 90 ? 'Pouco espaço de folga no futuro.' : 'Maior pressão prevista sobre a renda.'}
+                  negative={(futureSummary?.highestIncomeCommitmentPercent ?? 0) >= 90}
+                />
+              </>
+            )}
           </div>
+          <DashboardExpandButton expanded={expandedBlocks.future} onClick={() => toggleBlock('future')} />
         </Card>
       </div>
 
@@ -380,9 +401,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
               <h3 className="text-sm font-semibold text-gray-700">Onde você mais gastou</h3>
             </div>
             {categoryRanking.length > 5 && (
-              <button type="button" onClick={showAllCategoriesDetail} className="text-xs font-medium text-blue-600 hover:text-blue-700">
-                Ver todos
-              </button>
+              <DashboardLink onClick={showAllCategoriesDetail}>Ver categorias</DashboardLink>
             )}
           </div>
           <div className="space-y-2">
@@ -409,10 +428,10 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
               <LineChartIcon size={16} className="text-blue-600" />
               <h3 className="text-sm font-semibold text-gray-700">Saúde financeira</h3>
             </div>
-            <Badge color="blue">{formatMonthBR(selectedMonth)}</Badge>
+            <DashboardLink onClick={() => onNavigate('analise')}>Ver análise</DashboardLink>
           </div>
           <div className="grid grid-cols-1 gap-2">
-            {homeHealthIndicators.map((indicator) => (
+            {visibleHealthIndicators.map((indicator) => (
               <HealthIndicatorCard
                 key={indicator.id}
                 indicator={indicator}
@@ -422,23 +441,33 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
               />
             ))}
           </div>
+          {homeHealthIndicators.length > 2 && (
+            <DashboardExpandButton expanded={expandedBlocks.health} onClick={() => toggleBlock('health')} />
+          )}
         </Card>
       </div>
 
       <Card className="p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Fluxo financeiro dos próximos meses</h3>
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={flowData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-            <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-            <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Line type="monotone" dataKey="Receitas" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="Despesas" stroke="#EF4444" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="Saldo" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-gray-700">Fluxo financeiro dos próximos meses</h3>
+          <DashboardExpandButton expanded={expandedBlocks.chart} onClick={() => toggleBlock('chart')} compact />
+        </div>
+        {expandedBlocks.chart && (
+          <div className="mt-3">
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={flowData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
+                <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line type="monotone" dataKey="Receitas" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="Despesas" stroke="#EF4444" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="Saldo" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Card>
 
       {/* Detail Modal */}
@@ -459,11 +488,37 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
 function MetricItem({ label, value, description, positive, negative }: { label: string; value: string; description?: string; positive?: boolean; negative?: boolean }) {
   return (
-    <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+    <div className="rounded-md bg-gray-50/70 p-3">
       <p className="text-xs text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
       {description && <p className="mt-1 text-xs text-gray-500">{description}</p>}
     </div>
+  );
+}
+
+function DashboardLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+    >
+      {children}
+      <ChevronRight size={14} />
+    </button>
+  );
+}
+
+function DashboardExpandButton({ expanded, onClick, compact = false }: { expanded: boolean; onClick: () => void; compact?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${compact ? '' : 'mt-3'} inline-flex items-center gap-1 text-xs font-medium text-gray-500 transition-colors hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded`}
+    >
+      {expanded ? 'Mostrar menos' : 'Mostrar mais'}
+      {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+    </button>
   );
 }
 
@@ -482,7 +537,7 @@ function DrillDownList({ items, totalLabel, total }: { items: DrillDownItem[]; t
         <p className="text-sm text-gray-400">Nenhum lançamento encontrado.</p>
       ) : (
         items.map((item) => (
-          <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 p-3">
+          <div key={item.id} className="flex items-center justify-between gap-3 border-b border-gray-100 py-2.5 last:border-0">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-gray-700">{item.label}</p>
               <p className="text-xs text-gray-400">{item.meta}</p>
@@ -491,7 +546,7 @@ function DrillDownList({ items, totalLabel, total }: { items: DrillDownItem[]; t
           </div>
         ))
       )}
-      <div className="flex items-center justify-between gap-3 rounded-lg bg-blue-50 p-3">
+      <div className="flex items-center justify-between gap-3 rounded-md bg-blue-50/70 p-3">
         <span className="text-sm font-semibold text-blue-700">{totalLabel}</span>
         <span className="text-sm font-bold text-blue-900">{formatCurrency(total)}</span>
       </div>
@@ -519,7 +574,7 @@ function CategorySummary({ entries, onCategoryClick }: {
             key={category}
             type="button"
             onClick={() => onCategoryClick(category)}
-            className="flex w-full items-center justify-between gap-3 rounded-lg bg-gray-50 p-2 text-left hover:bg-blue-50"
+            className="flex w-full items-center justify-between gap-3 border-b border-gray-100 py-2 text-left transition-colors last:border-0 hover:text-blue-700"
           >
             <span className="text-sm text-gray-700">{category}</span>
             <span className="text-sm font-medium text-gray-900">{formatCurrency(amount)}</span>
@@ -532,7 +587,7 @@ function CategorySummary({ entries, onCategoryClick }: {
 
 function DetailRow({ label, amount, colorClass, strong = false }: { label: string; amount: number; colorClass: string; strong?: boolean }) {
   return (
-    <div className={`flex items-center justify-between gap-3 rounded-lg p-3 ${strong ? 'bg-blue-50' : 'bg-gray-50'}`}>
+    <div className={`flex items-center justify-between gap-3 border-b border-gray-100 py-2.5 last:border-0 ${strong ? 'rounded-md border-b-0 bg-blue-50/70 px-3' : ''}`}>
       <span className={`text-sm ${strong ? 'font-semibold text-blue-700' : 'text-gray-600'}`}>{label}</span>
       <span className={`text-sm font-bold ${colorClass}`}>{formatCurrency(amount)}</span>
     </div>
@@ -548,10 +603,10 @@ function CategoryRankingRow({ item, index, total, onClick }: {
   const percent = total > 0 ? (item.value / total) * 100 : 0;
 
   return (
-    <button type="button" onClick={onClick} className="w-full rounded-lg bg-gray-50 p-3 text-left transition-colors hover:bg-blue-50">
+    <button type="button" onClick={onClick} className="w-full rounded-md px-1 py-2.5 text-left transition-colors hover:bg-blue-50/60">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-gray-500">
+          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
             {index + 1}
           </span>
           <span className="truncate text-sm font-medium text-gray-700">{item.category}</span>
@@ -586,7 +641,7 @@ function HealthIndicatorCard({ indicator, onClick }: { indicator: FinancialHealt
       : formatPercent(indicator.value);
 
   return (
-    <button type="button" onClick={onClick} className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-left transition-colors hover:bg-blue-50">
+    <button type="button" onClick={onClick} className="rounded-md bg-gray-50/70 p-3 text-left transition-colors hover:bg-blue-50/70">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-medium text-gray-500">{indicator.label}</p>
