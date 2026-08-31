@@ -9,6 +9,25 @@ import { Card, StatCard, Badge, ProgressBar } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
 import type { FinancialHealthIndicator } from '@/lib/projection';
 
+const dashboardText = {
+  pageTitle: 'text-2xl font-bold text-gray-900',
+  pageSubtitle: 'text-sm text-gray-500',
+  sectionTitle: 'text-sm font-semibold text-gray-700',
+  label: 'text-xs font-medium text-gray-500',
+  secondary: 'text-xs text-gray-400',
+  value: 'text-sm font-semibold',
+  primaryValue: 'text-lg font-bold',
+  help: 'text-xs text-gray-500',
+};
+
+const statusText = {
+  positive: 'text-emerald-600',
+  warning: 'text-amber-600',
+  critical: 'text-rose-600',
+  info: 'text-blue-600',
+  neutral: 'text-gray-900',
+};
+
 export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void }) {
   const { data, isInvoicePaid } = useData();
   const { selectedMonth } = useMonth();
@@ -69,7 +88,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           label: income.name,
           meta: `${income.type} · ${income.person || 'Sem responsável'}`,
           amount,
-          colorClass: 'text-emerald-600',
+          colorClass: statusText.neutral,
         }))}
         totalLabel="Total receitas"
         total={current.income}
@@ -120,7 +139,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
             label: item.label,
             meta: item.meta,
             amount: item.amount,
-            colorClass: mode === 'unpaid' ? 'text-amber-600' : 'text-rose-600',
+            colorClass: mode === 'unpaid' ? statusText.warning : statusText.neutral,
           }))}
           totalLabel="Total"
           total={total}
@@ -132,9 +151,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const showBalanceDetail = () => {
     openDetail(`Saldo previsto · ${formatMonthBR(selectedMonth)}`, (
       <div className="space-y-2">
-        <DetailRow label="Receitas" amount={current.income} colorClass="text-emerald-600" />
-        <DetailRow label="Despesas previstas" amount={-current.expectedExpenses} colorClass="text-rose-600" />
-        <DetailRow label="Saldo previsto" amount={current.balance} colorClass={current.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'} strong />
+        <DetailRow label="Receitas" amount={current.income} colorClass={statusText.neutral} />
+        <DetailRow label="Despesas previstas" amount={-current.expectedExpenses} colorClass={statusText.neutral} />
+        <DetailRow label="Saldo previsto" amount={current.balance} colorClass={current.balance >= 0 ? statusText.positive : statusText.critical} strong />
       </div>
     ));
   };
@@ -158,7 +177,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           label: item.name,
           meta: `Cartão ${card.name} · ${item.installmentNumber}/${item.totalInstallments}`,
           amount: item.amount,
-          colorClass: 'text-purple-600',
+        colorClass: statusText.neutral,
         })))
       .filter((item) => Number.isFinite(item.amount) && item.amount > 0);
     const debtDetails = category === 'Dívidas'
@@ -167,7 +186,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           label: debt.name,
           meta: `${debt.institution || 'Dívida'} · ${debt.installmentsRemaining}x restantes`,
           amount,
-          colorClass: 'text-rose-600',
+          colorClass: statusText.neutral,
         }))
       : [];
     openDetail(`${category} · ${formatMonthBR(selectedMonth)}`, (
@@ -264,13 +283,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   return (
     <div className="space-y-3">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500">{monthLabelShort(selectedMonth)} · Visão geral financeira</p>
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div className="min-w-0">
+          <h1 className={dashboardText.pageTitle}>Dashboard</h1>
+          <p className={dashboardText.pageSubtitle}>{monthLabelShort(selectedMonth)} · Visão geral financeira</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className={`px-4 py-2 rounded-xl border-2 ${
+        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:items-center">
+          <div className={`min-w-0 px-3 py-2 sm:px-4 rounded-xl border-2 ${
             statusColor === 'green' ? 'bg-emerald-50 border-emerald-300' :
             statusColor === 'red' ? 'bg-rose-50 border-rose-300' :
             statusColor === 'yellow' ? 'bg-amber-50 border-amber-300' :
@@ -283,13 +302,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
                 statusColor === 'yellow' ? 'bg-amber-500' :
                 'bg-blue-500'
               }`} />
-              <span className="text-sm font-bold text-gray-700">{statusLabel}</span>
+              <span className="truncate text-sm font-bold text-gray-700">{statusLabel}</span>
             </div>
           </div>
           <button
             type="button"
             onClick={showAlertsDetail}
-            className={`rounded-xl border-2 px-4 py-2 transition-colors hover:bg-white ${
+            className={`min-w-0 rounded-xl border-2 px-3 py-2 transition-colors hover:bg-white sm:px-4 ${
               alertStatusColor === 'green' ? 'bg-emerald-50 border-emerald-300' :
               alertStatusColor === 'red' ? 'bg-rose-50 border-rose-300' :
               alertStatusColor === 'yellow' ? 'bg-amber-50 border-amber-300' :
@@ -303,16 +322,16 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
                 alertStatusColor === 'yellow' ? 'text-amber-500' :
                 'text-blue-500'
               } />
-              <span className="text-sm font-bold text-gray-700">{alertStatusLabel}</span>
+              <span className="truncate text-sm font-bold text-gray-700">{alertStatusLabel}</span>
             </div>
           </button>
         </div>
       </div>
 
       {/* Bloco 1: resumo do mês */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-1">
-        <StatCard title="Entradas" value={formatCurrency(current.income)} subtitle={incomeContext} color="green" icon={<TrendingUp size={18} />} onClick={showIncomeDetail} tooltip="Receitas previstas do mês." />
-        <StatCard title="Saídas" value={formatCurrency(current.realizedExpenses)} subtitle={expenseContext} color="red" icon={<ReceiptText size={18} />} onClick={() => showExpensesDetail('Saídas', 'realized')} tooltip={`Previsto: ${formatCurrency(current.expectedExpenses)}.`} />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-1">
+        <StatCard title="Entradas" value={formatCurrency(current.income)} subtitle={incomeContext} color="blue" icon={<TrendingUp size={18} />} onClick={showIncomeDetail} tooltip="Receitas previstas do mês." />
+        <StatCard title="Saídas" value={formatCurrency(current.realizedExpenses)} subtitle={expenseContext} color={current.balance < 0 ? 'red' : 'gray'} icon={<ReceiptText size={18} />} onClick={() => showExpensesDetail('Saídas', 'realized')} tooltip={`Previsto: ${formatCurrency(current.expectedExpenses)}.`} />
         <StatCard title="A pagar" value={formatCurrency(current.unpaidExpenses)} subtitle={`${formatPercent(unpaidPercent)} pendente. ${unpaidContext}`} color={current.unpaidExpenses > 0 ? 'yellow' : 'green'} icon={<Banknote size={18} />} onClick={() => showExpensesDetail('A pagar', 'unpaid')} tooltip="Saídas ainda pendentes." />
         <StatCard title="Saldo do mês" value={formatCurrency(current.balance)} subtitle={balanceContext} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} onClick={showBalanceDetail} tooltip={`Saldo em contas: ${formatCurrency(current.projectedAccountsBalance)}.`} />
       </div>
@@ -324,19 +343,19 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <CreditCard size={18} className="text-blue-600" />
-                <h3 className="text-sm font-semibold text-gray-700">Cartões</h3>
+                <h3 className={dashboardText.sectionTitle}>Cartões</h3>
               </div>
-              <p className="mt-1 text-xs text-gray-400">{formatMonthBR(selectedMonth)}</p>
+              <p className={`${dashboardText.secondary} mt-1`}>{formatMonthBR(selectedMonth)}</p>
             </div>
             <DashboardLink onClick={() => onNavigate('cartoes')}>Ver cartões</DashboardLink>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <MetricItem label="Fatura do mês" value={formatCurrency(current.cardExpenses)} description={current.cardExpenses > 0 ? 'Valor que entra nas saídas deste mês.' : 'Sem fatura prevista neste mês.'} negative={current.cardExpenses > 0} />
+            <MetricItem label="Fatura do mês" value={formatCurrency(current.cardExpenses)} description={current.cardExpenses > 0 ? 'Valor que entra nas saídas deste mês.' : 'Sem fatura prevista neste mês.'} negative={cardPct > 100} />
             <MetricItem label="Meta" value={formatCurrency(cardLimit)} description={cardPct > 100 ? 'A fatura passou da meta mensal.' : 'Referência para controlar a fatura.'} />
             {expandedBlocks.cards && (
               <>
                 <MetricItem label="% da renda" value={formatPercent(cardIncomePercent)} description={cardIncomePercent >= 35 ? 'Cartões estão pesando na renda.' : 'Mostra o peso dos cartões na renda.'} negative={cardIncomePercent >= 35} />
-                <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} description={current.parcelasFuturas > 0 ? 'Compromisso que já chega nos próximos meses.' : 'Sem parcelas futuras cadastradas.'} negative={current.parcelasFuturas > 0} />
+                <MetricItem label="Parcelas futuras" value={formatCurrency(current.parcelasFuturas)} description={current.parcelasFuturas > 0 ? 'Compromisso que já chega nos próximos meses.' : 'Sem parcelas futuras cadastradas.'} />
               </>
             )}
           </div>
@@ -358,9 +377,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
             <div>
               <div className="flex items-center gap-2">
                 <LineChartIcon size={16} className="text-blue-600" />
-                <h3 className="text-sm font-semibold text-gray-700">Próximos meses</h3>
+                <h3 className={dashboardText.sectionTitle}>Próximos meses</h3>
               </div>
-              <p className="mt-1 text-xs text-gray-400">Visão rápida dos próximos {futureSummary?.months ?? 12} meses</p>
+              <p className={`${dashboardText.secondary} mt-1`}>Visão rápida dos próximos {futureSummary?.months ?? 12} meses</p>
             </div>
             <DashboardLink onClick={() => onNavigate('projecao')}>Ver projeção</DashboardLink>
           </div>
@@ -398,7 +417,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <PieChartIcon size={18} className="text-blue-600" />
-              <h3 className="text-sm font-semibold text-gray-700">Onde você mais gastou</h3>
+              <h3 className={dashboardText.sectionTitle}>Onde você mais gastou</h3>
             </div>
             {categoryRanking.length > 5 && (
               <DashboardLink onClick={showAllCategoriesDetail}>Ver categorias</DashboardLink>
@@ -426,7 +445,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <LineChartIcon size={16} className="text-blue-600" />
-              <h3 className="text-sm font-semibold text-gray-700">Saúde financeira</h3>
+              <h3 className={dashboardText.sectionTitle}>Saúde financeira</h3>
             </div>
             <DashboardLink onClick={() => onNavigate('analise')}>Ver análise</DashboardLink>
           </div>
@@ -449,7 +468,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 
       <Card className="p-4">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-gray-700">Fluxo financeiro dos próximos meses</h3>
+          <h3 className={dashboardText.sectionTitle}>Fluxo financeiro dos próximos meses</h3>
           <DashboardExpandButton expanded={expandedBlocks.chart} onClick={() => toggleBlock('chart')} compact />
         </div>
         {expandedBlocks.chart && (
@@ -461,8 +480,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
                 <YAxis tick={{ fontSize: 10 }} stroke="#9CA3AF" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Line type="monotone" dataKey="Receitas" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="Despesas" stroke="#EF4444" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="Receitas" stroke="#64748B" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="Despesas" stroke="#94A3B8" strokeWidth={2} dot={{ r: 3 }} />
                 <Line type="monotone" dataKey="Saldo" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -475,7 +494,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setDetailModal(null)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-200 sticky top-0 bg-white">
-              <h2 className="text-lg font-semibold text-gray-900">{detailModal.title}</h2>
+              <h2 className={`${dashboardText.primaryValue} text-gray-900`}>{detailModal.title}</h2>
               <button onClick={() => setDetailModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
             </div>
             <div className="p-4">{detailModal.content}</div>
@@ -489,9 +508,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
 function MetricItem({ label, value, description, positive, negative }: { label: string; value: string; description?: string; positive?: boolean; negative?: boolean }) {
   return (
     <div className="rounded-md bg-gray-50/70 p-3">
-      <p className="text-xs text-gray-400">{label}</p>
-      <p className={`text-sm font-bold ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
-      {description && <p className="mt-1 text-xs text-gray-500">{description}</p>}
+      <p className={dashboardText.secondary}>{label}</p>
+      <p className={`${dashboardText.value} break-words [overflow-wrap:anywhere] ${positive ? 'text-emerald-600' : negative ? 'text-rose-600' : 'text-gray-900'}`}>{value}</p>
+      {description && <p className={`${dashboardText.help} mt-1`}>{description}</p>}
     </div>
   );
 }
@@ -537,18 +556,18 @@ function DrillDownList({ items, totalLabel, total }: { items: DrillDownItem[]; t
         <p className="text-sm text-gray-400">Nenhum lançamento encontrado.</p>
       ) : (
         items.map((item) => (
-          <div key={item.id} className="flex items-center justify-between gap-3 border-b border-gray-100 py-2.5 last:border-0">
+          <div key={item.id} className="flex items-start justify-between gap-3 border-b border-gray-100 py-2.5 last:border-0">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-gray-700">{item.label}</p>
-              <p className="text-xs text-gray-400">{item.meta}</p>
+              <p className={dashboardText.secondary}>{item.meta}</p>
             </div>
-            <span className={`flex-shrink-0 text-sm font-bold ${item.colorClass}`}>{formatCurrency(item.amount)}</span>
+            <span className={`max-w-[45%] flex-shrink-0 text-right break-words [overflow-wrap:anywhere] ${dashboardText.value} ${item.colorClass}`}>{formatCurrency(item.amount)}</span>
           </div>
         ))
       )}
       <div className="flex items-center justify-between gap-3 rounded-md bg-blue-50/70 p-3">
         <span className="text-sm font-semibold text-blue-700">{totalLabel}</span>
-        <span className="text-sm font-bold text-blue-900">{formatCurrency(total)}</span>
+        <span className={`${dashboardText.value} text-blue-900`}>{formatCurrency(total)}</span>
       </div>
     </div>
   );
@@ -567,7 +586,7 @@ function CategorySummary({ entries, onCategoryClick }: {
 
   return (
     <div>
-      <p className="mb-2 text-xs font-medium text-gray-500">Composição por categoria</p>
+      <p className={`mb-2 ${dashboardText.label}`}>Composição por categoria</p>
       <div className="space-y-1.5">
         {totals.map(([category, amount]) => (
           <button
@@ -577,7 +596,7 @@ function CategorySummary({ entries, onCategoryClick }: {
             className="flex w-full items-center justify-between gap-3 border-b border-gray-100 py-2 text-left transition-colors last:border-0 hover:text-blue-700"
           >
             <span className="text-sm text-gray-700">{category}</span>
-            <span className="text-sm font-medium text-gray-900">{formatCurrency(amount)}</span>
+            <span className={`max-w-[45%] text-right break-words [overflow-wrap:anywhere] ${dashboardText.value} text-gray-900`}>{formatCurrency(amount)}</span>
           </button>
         ))}
       </div>
@@ -587,9 +606,9 @@ function CategorySummary({ entries, onCategoryClick }: {
 
 function DetailRow({ label, amount, colorClass, strong = false }: { label: string; amount: number; colorClass: string; strong?: boolean }) {
   return (
-    <div className={`flex items-center justify-between gap-3 border-b border-gray-100 py-2.5 last:border-0 ${strong ? 'rounded-md border-b-0 bg-blue-50/70 px-3' : ''}`}>
+    <div className={`flex items-start justify-between gap-3 border-b border-gray-100 py-2.5 last:border-0 ${strong ? 'rounded-md border-b-0 bg-blue-50/70 px-3' : ''}`}>
       <span className={`text-sm ${strong ? 'font-semibold text-blue-700' : 'text-gray-600'}`}>{label}</span>
-      <span className={`text-sm font-bold ${colorClass}`}>{formatCurrency(amount)}</span>
+      <span className={`max-w-[45%] text-right break-words [overflow-wrap:anywhere] ${dashboardText.value} ${colorClass}`}>{formatCurrency(amount)}</span>
     </div>
   );
 }
@@ -611,9 +630,9 @@ function CategoryRankingRow({ item, index, total, onClick }: {
           </span>
           <span className="truncate text-sm font-medium text-gray-700">{item.category}</span>
         </div>
-        <div className="flex flex-shrink-0 items-center gap-2">
-          <span className="text-sm font-semibold text-gray-900">{formatCurrency(item.value)}</span>
-          <span className="w-12 text-right text-xs text-gray-400">{percent.toFixed(0)}%</span>
+        <div className="flex min-w-0 flex-shrink-0 items-center justify-end gap-2">
+          <span className={`break-words text-right [overflow-wrap:anywhere] ${dashboardText.value} text-gray-900`}>{formatCurrency(item.value)}</span>
+          <span className={`w-12 text-right ${dashboardText.secondary}`}>{percent.toFixed(0)}%</span>
         </div>
       </div>
       <ProgressBar value={percent} max={100} color={percent >= 35 ? 'red' : percent >= 20 ? 'yellow' : 'blue'} />
@@ -644,12 +663,12 @@ function HealthIndicatorCard({ indicator, onClick }: { indicator: FinancialHealt
     <button type="button" onClick={onClick} className="rounded-md bg-gray-50/70 p-3 text-left transition-colors hover:bg-blue-50/70">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-gray-500">{indicator.label}</p>
-          <p className="text-lg font-bold text-gray-900 mt-1">{valueText}</p>
+          <p className={dashboardText.label}>{indicator.label}</p>
+          <p className={`${dashboardText.primaryValue} mt-1 text-gray-900`}>{valueText}</p>
         </div>
         <Badge color={statusColor[indicator.status]}>{statusLabel[indicator.status]}</Badge>
       </div>
-      <p className="text-xs text-gray-600 mt-2">{indicator.explanation}</p>
+      <p className={`${dashboardText.help} mt-2 text-gray-600`}>{indicator.explanation}</p>
     </button>
   );
 }
@@ -690,7 +709,7 @@ function HealthIndicatorDetail({ indicator }: { indicator: FinancialHealthIndica
         <p className="mt-1 text-sm text-blue-900">{indicator.formula}</p>
       </div>
       <div className="rounded-lg bg-gray-50 p-3">
-        <p className="text-xs font-medium text-gray-500">Faixa de leitura</p>
+        <p className={dashboardText.label}>Faixa de leitura</p>
         <p className="mt-1 text-sm text-gray-700">{indicator.range}</p>
       </div>
     </div>

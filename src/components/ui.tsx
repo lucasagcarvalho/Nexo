@@ -40,6 +40,12 @@ const colorMap = {
   purple: 'text-purple-600 bg-purple-50',
 };
 
+const statTypography = {
+  label: 'text-xs font-medium text-gray-500',
+  value: 'text-xl font-bold text-gray-900',
+  secondary: 'text-xs text-gray-400',
+};
+
 export function StatCard({ title, value, subtitle, icon, color = 'gray', onClick, tooltip }: StatCardProps) {
   return (
     <Tooltip text={tooltip ?? ''} className="w-full h-full">
@@ -47,8 +53,8 @@ export function StatCard({ title, value, subtitle, icon, color = 'gray', onClick
       <div className="flex h-full min-h-[92px] flex-col justify-between gap-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{title}</p>
-            {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+            <p className={statTypography.label}>{title}</p>
+            {subtitle && <p className={`${statTypography.secondary} mt-1`}>{subtitle}</p>}
           </div>
           {icon && (
             <div className={`p-2 rounded-lg ${colorMap[color]} flex-shrink-0`}>
@@ -56,7 +62,7 @@ export function StatCard({ title, value, subtitle, icon, color = 'gray', onClick
             </div>
           )}
         </div>
-        <p className="text-xl font-bold text-gray-900 whitespace-nowrap">{value}</p>
+        <p className={`${statTypography.value} leading-tight break-words [overflow-wrap:anywhere]`}>{value}</p>
       </div>
       </Card>
     </Tooltip>

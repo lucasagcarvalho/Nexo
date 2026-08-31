@@ -1566,7 +1566,7 @@ Testes:
 
 ## ETAPA 19 — Padronizar tipografia e peso visual
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -1593,29 +1593,44 @@ Ajuda/contexto
 
 ### Critérios de aceite
 
-- [ ] Tipografia segue escala consistente.
-- [ ] Valores principais são identificáveis rapidamente.
-- [ ] Informações secundárias não competem.
-- [ ] Não existem tamanhos arbitrários espalhados.
+- [x] Tipografia segue escala consistente.
+- [x] Valores principais são identificáveis rapidamente.
+- [x] Informações secundárias não competem.
+- [x] Não existem tamanhos arbitrários espalhados.
 
 ### Notas de implementação
 
 ```text
 Escala adotada:
--
+- Título de página: `text-2xl font-bold text-gray-900`.
+- Título de seção: `text-sm font-semibold text-gray-700`.
+- Nome de indicador: `text-xs font-medium text-gray-500`.
+- Valor principal: `text-xl font-bold` nos cards principais e `text-lg font-bold` em indicadores destacados.
+- Valor de lista/item: `text-sm font-semibold`.
+- Informação secundária: `text-xs text-gray-400`.
+- Ajuda/contexto: `text-xs text-gray-500`.
 
 Classes/componentes:
--
+- `StatCard` passou a usar escala tipográfica centralizada em `statTypography`.
+- Dashboard ganhou `dashboardText` para padronizar títulos, labels, valores, informação secundária e ajuda.
+- Cores de estado foram mantidas fora das constantes de tamanho/peso para evitar conflito visual.
 
 Arquivos:
--
+- src/components/ui.tsx
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
 
 ## ETAPA 20 — Padronizar uso de cores de status
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -1640,22 +1655,36 @@ Evitar:
 
 ### Critérios de aceite
 
-- [ ] Cores de status consistentes.
-- [ ] Status não depende apenas da cor.
-- [ ] Interface possui menos ruído cromático.
-- [ ] Acessibilidade visual preservada.
+- [x] Cores de status consistentes.
+- [x] Status não depende apenas da cor.
+- [x] Interface possui menos ruído cromático.
+- [x] Acessibilidade visual preservada.
 
 ### Notas de implementação
 
 ```text
 Cores:
--
+- Verde ficou reservado para estado saudável/positivo real.
+- Amarelo ficou reservado para atenção/pendência.
+- Vermelho ficou reservado para crítico/risco/estouro.
+- Azul ficou como informação, navegação e fórmulas.
+- Cinza ficou para valores neutros e números contábeis sem status.
+- Receitas, despesas, cartões e dívidas em listas de detalhe deixaram de usar cor só pela natureza do lançamento.
+- Linhas do gráfico da Home foram neutralizadas para reduzir associação indevida de receita/despesa com status.
 
 Componentes:
--
+- Dashboard ganhou `statusText` para centralizar cores semânticas.
+- Cards principais de Entradas e Saídas foram ajustados: Entradas é informativo; Saídas só fica vermelho quando o mês fecha negativo.
+- `MetricItem` mantém verde/vermelho apenas quando recebe indicação explícita de positivo/negativo.
 
 Arquivos:
--
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1664,7 +1693,7 @@ Arquivos:
 
 ## ETAPA 21 — Revisar Dashboard em resoluções menores
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Validar
@@ -1684,22 +1713,35 @@ Arquivos:
 
 ### Critérios de aceite
 
-- [ ] Sem overflow horizontal.
-- [ ] Valores monetários não cortam.
-- [ ] Hierarquia permanece clara.
-- [ ] CTAs continuam acessíveis.
+- [x] Sem overflow horizontal.
+- [x] Valores monetários não cortam.
+- [x] Hierarquia permanece clara.
+- [x] CTAs continuam acessíveis.
 
 ### Notas de implementação
 
 ```text
 Breakpoints:
--
+- Cards principais passam a usar 2 colunas no mobile e 4 colunas em `xl`.
+- Cabeçalho do Dashboard mantém status/alertas em grid 2 colunas no mobile e volta para linha em `sm`.
+- Blocos de duas colunas continuam virando uma coluna até `xl`.
 
 Ajustes:
--
+- `StatCard` removeu `whitespace-nowrap` do valor e ganhou quebra segura com `overflow-wrap:anywhere`.
+- Header da Home recebeu `min-w-0` e status/alertas com `truncate` para evitar estouro lateral.
+- Valores em listas, detalhes e ranking ganharam quebra segura e limite relativo de largura.
+- CTAs mantêm foco acessível e continuam alcançáveis em telas menores.
+- Não foram alterados cálculos financeiros.
 
 Arquivos:
--
+- src/components/ui.tsx
+- src/pages/DashboardPage.tsx
+
+Testes:
+- `npm test`: 31 testes passaram.
+- `npm run typecheck`: passou.
+- `npm run lint`: passou sem erros, com 6 avisos preexistentes de Fast Refresh.
+- `npm run build`: passou, com avisos preexistentes de Browserslist e tamanho de bundle.
 ```
 
 ---
@@ -1881,6 +1923,9 @@ Adicionar uma linha sempre que uma etapa for concluída.
 | 2026-08-31 | Etapa 16 — Padronizar "Ver detalhes" | Concluído | CTAs secundários da Home foram padronizados como "Ver <destino>" com estilo único, seta e foco acessível. | src/pages/DashboardPage.tsx |
 | 2026-08-31 | Etapa 17 — Criar modo resumido e expandido opcional | Concluído | Dashboard passou a abrir mais limpo, com Cartões, Próximos meses, Saúde financeira e gráfico em modo resumido e expansão opcional por bloco. | src/pages/DashboardPage.tsx |
 | 2026-08-31 | Etapa 18 — Reduzir bordas, caixas e ruído visual | Concluído | Itens internos do Dashboard perderam bordas/caixas redundantes e passaram a usar fundo sutil, espaçamento e separadores simples. | src/pages/DashboardPage.tsx |
+| 2026-08-31 | Etapa 19 — Padronizar tipografia e peso visual | Concluído | Dashboard e StatCard passaram a usar escalas tipográficas centralizadas para títulos, labels, valores, textos secundários e ajuda/contexto. | src/components/ui.tsx, src/pages/DashboardPage.tsx |
+| 2026-08-31 | Etapa 20 — Padronizar uso de cores de status | Concluído | Cores do Dashboard foram ajustadas para comunicar estado, deixando números contábeis neutros e mantendo verde/amarelo/vermelho para saudável/atenção/crítico. | src/pages/DashboardPage.tsx |
+| 2026-08-31 | Etapa 21 — Revisar Dashboard em resoluções menores | Concluído | Dashboard recebeu ajustes de grid, quebra de valores, header e ranking para evitar overflow horizontal e manter CTAs acessíveis em telas menores. | src/components/ui.tsx, src/pages/DashboardPage.tsx |
 
 ---
 
