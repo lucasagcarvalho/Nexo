@@ -1,3 +1,183 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+
+  .dark body {
+    background-color: rgb(2 6 23);
+    color: rgb(226 232 240);
+  }
+}
+
+@layer utilities {
+  .dark .bg-white {
+    background-color: rgb(15 23 42);
+  }
+
+  .dark .bg-gray-50,
+  .dark .bg-gray-50\/70 {
+    background-color: rgb(30 41 59);
+  }
+
+  .dark .bg-gray-100 {
+    background-color: rgb(51 65 85);
+  }
+
+  .dark .bg-gray-200 {
+    background-color: rgb(71 85 105);
+  }
+
+  .dark .bg-blue-50,
+  .dark .bg-blue-100 {
+    background-color: rgb(30 58 138 / 0.35);
+  }
+
+  .dark .bg-emerald-50,
+  .dark .bg-emerald-100 {
+    background-color: rgb(6 78 59 / 0.35);
+  }
+
+  .dark .bg-rose-50,
+  .dark .bg-rose-100 {
+    background-color: rgb(136 19 55 / 0.35);
+  }
+
+  .dark .bg-amber-50,
+  .dark .bg-amber-100,
+  .dark .bg-yellow-50,
+  .dark .bg-yellow-100 {
+    background-color: rgb(120 53 15 / 0.35);
+  }
+
+  .dark .bg-purple-50,
+  .dark .bg-purple-100 {
+    background-color: rgb(88 28 135 / 0.35);
+  }
+
+  .dark .border-gray-100,
+  .dark .border-gray-200,
+  .dark .border-gray-300 {
+    border-color: rgb(51 65 85);
+  }
+
+  .dark .border-blue-200,
+  .dark .border-blue-300 {
+    border-color: rgb(37 99 235 / 0.55);
+  }
+
+  .dark .border-rose-100,
+  .dark .border-rose-200,
+  .dark .border-rose-300 {
+    border-color: rgb(225 29 72 / 0.45);
+  }
+
+  .dark .text-gray-900,
+  .dark .text-gray-800,
+  .dark .text-gray-700,
+  .dark .text-gray-600 {
+    color: rgb(226 232 240);
+  }
+
+  .dark .text-gray-500,
+  .dark .text-gray-400 {
+    color: rgb(148 163 184);
+  }
+
+  .dark .text-blue-900,
+  .dark .text-blue-700,
+  .dark .text-blue-600 {
+    color: rgb(147 197 253);
+  }
+
+  .dark .text-emerald-700,
+  .dark .text-emerald-600,
+  .dark .text-emerald-500 {
+    color: rgb(110 231 183);
+  }
+
+  .dark .text-rose-700,
+  .dark .text-rose-600,
+  .dark .text-rose-500 {
+    color: rgb(251 113 133);
+  }
+
+  .dark .text-amber-700,
+  .dark .text-amber-600,
+  .dark .text-amber-500,
+  .dark .text-yellow-700,
+  .dark .text-yellow-600 {
+    color: rgb(252 211 77);
+  }
+
+  .dark .text-purple-700,
+  .dark .text-purple-600,
+  .dark .text-purple-500 {
+    color: rgb(216 180 254);
+  }
+
+  .dark input,
+  .dark select,
+  .dark textarea {
+    background-color: rgb(15 23 42);
+    border-color: rgb(71 85 105);
+    color: rgb(226 232 240);
+  }
+
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: rgb(100 116 139);
+  }
+
+  .dark .shadow-sm,
+  .dark .shadow-md,
+  .dark .shadow-lg,
+  .dark .shadow-xl {
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.25);
+  }
+
+  .dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgb(51 65 85);
+  }
+
+  .dark .hover\:bg-white:hover {
+    background-color: rgb(30 41 59);
+  }
+
+  .dark .hover\:bg-gray-50:hover,
+  .dark .hover\:bg-gray-100:hover {
+    background-color: rgb(51 65 85);
+  }
+
+  .dark .hover\:bg-blue-50:hover,
+  .dark .hover\:bg-blue-50\/70:hover {
+    background-color: rgb(30 58 138 / 0.45);
+  }
+
+  .dark .hover\:bg-rose-50:hover {
+    background-color: rgb(136 19 55 / 0.45);
+  }
+
+  .dark .bg-gradient-to-r {
+    background-image: linear-gradient(to right, rgb(15 23 42), rgb(30 41 59));
+  }
+
+  .dark .recharts-cartesian-grid line,
+  .dark .recharts-cartesian-axis line,
+  .dark .recharts-cartesian-axis-tick line {
+    stroke: rgb(71 85 105);
+  }
+
+  .dark .recharts-text {
+    fill: rgb(203 213 225);
+  }
+
+  .dark .recharts-default-tooltip {
+    background-color: rgb(15 23 42) !important;
+    border-color: rgb(51 65 85) !important;
+    color: rgb(226 232 240) !important;
+  }
+}

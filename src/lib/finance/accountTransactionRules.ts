@@ -1,4 +1,4 @@
-import type { AccountTransaction, AccountTransactionRelatedEntityType, AppData, ExpensePayment, IncomeReceipt } from '../types';
+import type { AccountTransaction, AccountTransactionRelatedEntityType, AppData, ExpensePayment, IncomeReceipt, CardInvoicePayment } from '../types';
 import { uid } from '../format';
 
 export interface AccountLedgerBalanceComparison {
@@ -242,6 +242,60 @@ export function createExpensePaymentReversalTransaction(
   date?: string,
 ): AccountTransaction | null {
   const payment = getExpensePaymentForMonth(data, expenseId, monthKey);
+  if (!payment) return null;
+  const transaction = getAccountTransactions(data).find((item) => item.id === payment.transactionId);
+  if (!transaction || isTransactionReversed(data, transaction.id)) return null;
+  return createReversalTransaction(transaction, date ?? payment.date);
+}
+
+export function createCardInvoicePaymentTransaction(
+  cardId: string,
+  accountId: string,
+  amount: number,
+  date: string,
+  relatedMonthKey: string,
+  note?: string,
+): AccountTransaction | null {
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (
+    !cardId
+    || !accountId
+    || !isValidDateKey(date)
+    || !isValidMonthKey(relatedMonthKey)
+    || !Number.isFinite(roundedAmount)
+    || roundedAmount <= 0
+  ) {
+    return null;
+  }
+  return {
+    id: uid(),
+    accountId,
+    date,
+    monthKey: date.slice(0, 7),
+    amount: -roundedAmount,
+    kind: 'card_invoice_payment',
+    relatedEntityType: 'cardInvoice',
+    relatedEntityId: cardId,
+    relatedMonthKey,
+    note: note || 'Pagamento de fatura de cartão.',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function getCardInvoicePaymentForMonth(data: AppData, cardId: string, monthKey: string): CardInvoicePayment | null {
+  return (data.cardInvoicePayments ?? []).find((payment) => (
+    payment.cardId === cardId
+    && payment.monthKey === monthKey
+  )) ?? null;
+}
+
+export function createCardInvoicePaymentReversalTransaction(
+  data: AppData,
+  cardId: string,
+  monthKey: string,
+  date?: string,
+): AccountTransaction | null {
+  const payment = getCardInvoicePaymentForMonth(data, cardId, monthKey);
   if (!payment) return null;
   const transaction = getAccountTransactions(data).find((item) => item.id === payment.transactionId);
   if (!transaction || isTransactionReversed(data, transaction.id)) return null;

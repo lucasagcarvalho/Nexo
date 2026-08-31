@@ -1,4 +1,4 @@
-import type { AppData } from '../types';
+import type { AppData, BankAccount } from '../types';
 import { compareMonths, currentMonthKey } from '../format';
 
 function endOfMonthDate(monthKey: string): string {
@@ -9,6 +9,12 @@ function endOfMonthDate(monthKey: string): string {
 
 export function totalBankBalance(data: AppData): number {
   return data.bankAccounts.reduce((sum, account) => sum + (Number.isFinite(account.balance) ? account.balance : 0), 0);
+}
+
+export function formatBankAccountLabel(account: BankAccount): string {
+  const bank = account.bank.trim() || account.name?.trim() || 'Conta';
+  const holder = account.holder.trim();
+  return holder ? `${bank} · ${holder}` : bank;
 }
 
 export function getAccountBalanceSnapshotForMonth(data: AppData, monthKey: string): number | null {

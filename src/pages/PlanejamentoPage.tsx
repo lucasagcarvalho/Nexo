@@ -4,13 +4,16 @@ import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { getPlanningMonthDetails, projectMonths } from '@/lib/projection';
 import { formatCurrency, monthLabel, formatDateBR, formatMonthBR } from '@/lib/format';
+import { formatBankAccountLabel } from '@/lib/finance/accountRules';
 import type { Expense } from '@/lib/types';
-import { Card, Badge, Button, CurrencyInput, Input, Modal, Select } from '@/components/ui';
+import { Card, Badge, Button, CurrencyInput, Input, Modal, Select, BalanceChangeConfirmDialog } from '@/components/ui';
 
 export function PlanejamentoPage() {
   const { data, payExpense, undoExpensePayment, isExpensePaidForMonth, isInvoicePaid } = useData();
   const { selectedMonth } = useMonth();
   const [paying, setPaying] = useState<{ expense: Expense; amount: number } | null>(null);
+  const [confirmPayment, setConfirmPayment] = useState(false);
+  const [confirmPaymentReversal, setConfirmPaymentReversal] = useState<Expense | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     date: '',
     amount: 0,
@@ -25,7 +28,7 @@ export function PlanejamentoPage() {
     { value: '', label: 'Selecione a conta' },
     ...data.bankAccounts.map((account) => ({
       value: account.id,
-      label: `${account.name} · ${account.bank}`,
+      label: formatBankAccountLabel(account),
     })),
   ], [data.bankAccounts]);
 
@@ -46,6 +49,11 @@ export function PlanejamentoPage() {
     });
   };
 
+  const requestPaymentConfirmation = () => {
+    if (!paying || !paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0) return;
+    setConfirmPayment(true);
+  };
+
   const savePayment = () => {
     if (!paying || !paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0) return;
     payExpense({
@@ -56,8 +64,31 @@ export function PlanejamentoPage() {
       expectedAmount: paying.amount,
       paidAmount: paymentForm.amount,
     });
+    setConfirmPayment(false);
     setPaying(null);
   };
+
+  const toggleExpensePayment = (expense: Expense, amount: number) => {
+    if (isExpensePaidForMonth(expense, selectedMonth)) {
+      setConfirmPaymentReversal(expense);
+    } else {
+      openPayment(expense, amount);
+    }
+  };
+
+  const selectedPaymentAccount = paymentForm.accountId
+    ? data.bankAccounts.find((account) => account.id === paymentForm.accountId) ?? null
+    : null;
+  const paymentNextBalance = selectedPaymentAccount ? selectedPaymentAccount.balance - paymentForm.amount : undefined;
+  const paymentWarning = paymentNextBalance !== undefined && paymentNextBalance < 0
+    ? `Este pagamento deixará a conta em ${formatCurrency(paymentNextBalance)}.`
+    : null;
+  const reversalPayment = confirmPaymentReversal
+    ? (data.expensePayments ?? []).find((payment) => payment.expenseId === confirmPaymentReversal.id && payment.monthKey === selectedMonth) ?? null
+    : null;
+  const reversalPaymentAccount = reversalPayment
+    ? data.bankAccounts.find((account) => account.id === reversalPayment.accountId) ?? null
+    : null;
 
   const bills = useMemo(() => {
     const list: { id: string; date: string; label: string; amount: number; paid: boolean }[] = [];
@@ -169,7 +200,7 @@ export function PlanejamentoPage() {
               return (
                 <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => (isExpensePaidForMonth(exp, selectedMonth) ? undoExpensePayment(exp.id, selectedMonth) : openPayment(exp, amount))} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
+                    <button onClick={() => toggleExpensePayment(exp, amount)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
                       {isExpensePaidForMonth(exp, selectedMonth) && <Check size={12} className="text-white" />}
                     </button>
                     <span className="text-sm text-gray-700">{exp.description}</span>
@@ -202,7 +233,7 @@ export function PlanejamentoPage() {
                 return (
                   <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => (isExpensePaidForMonth(exp, selectedMonth) ? undoExpensePayment(exp.id, selectedMonth) : openPayment(exp, amount))} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
+                      <button onClick={() => toggleExpensePayment(exp, amount)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
                         {isExpensePaidForMonth(exp, selectedMonth) && <Check size={12} className="text-white" />}
                       </button>
                       <span className="text-sm text-gray-700">{exp.description}</span>
@@ -234,7 +265,7 @@ export function PlanejamentoPage() {
                 return (
                   <div key={exp.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => (isExpensePaidForMonth(exp, selectedMonth) ? undoExpensePayment(exp.id, selectedMonth) : openPayment(exp, amount))} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
+                      <button onClick={() => toggleExpensePayment(exp, amount)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isExpensePaidForMonth(exp, selectedMonth) ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
                         {isExpensePaidForMonth(exp, selectedMonth) && <Check size={12} className="text-white" />}
                       </button>
                       <span className="text-sm text-gray-700">{exp.description}</span>
@@ -328,13 +359,13 @@ export function PlanejamentoPage() {
       <Modal open={paying !== null} onClose={() => setPaying(null)} title="Registrar pagamento" footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setPaying(null)}>Cancelar</Button>
-          <Button onClick={savePayment} disabled={!paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0}>
-            Pagar
+          <Button onClick={requestPaymentConfirmation} disabled={!paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0}>
+            Revisar pagamento
           </Button>
         </div>
       }>
         {paying && (
-          <form onSubmit={(e) => { e.preventDefault(); savePayment(); }} className="space-y-3">
+          <form onSubmit={(e) => { e.preventDefault(); requestPaymentConfirmation(); }} className="space-y-3">
             <div className="p-3 bg-rose-50 rounded-lg">
               <p className="text-sm font-semibold text-rose-700">{paying.expense.description}</p>
               <p className="text-xs text-gray-500">Previsto: {formatCurrency(paying.amount)} · Dia {paying.expense.dueDay}</p>
@@ -346,6 +377,38 @@ export function PlanejamentoPage() {
           </form>
         )}
       </Modal>
+
+      <BalanceChangeConfirmDialog
+        open={confirmPayment}
+        title="Confirmar pagamento?"
+        itemName={paying?.expense.description ?? ''}
+        amount={paymentForm.amount}
+        accountLabel={selectedPaymentAccount ? formatBankAccountLabel(selectedPaymentAccount) : 'Conta não selecionada'}
+        date={paymentForm.date ? formatDateBR(paymentForm.date) : undefined}
+        currentBalance={selectedPaymentAccount?.balance}
+        nextBalance={paymentNextBalance}
+        warning={paymentWarning}
+        confirmText={paymentWarning ? 'Continuar mesmo assim' : 'Confirmar pagamento'}
+        onConfirm={savePayment}
+        onCancel={() => setConfirmPayment(false)}
+        onChooseAnotherAccount={() => setConfirmPayment(false)}
+      />
+
+      <BalanceChangeConfirmDialog
+        open={confirmPaymentReversal !== null}
+        title="Desfazer pagamento?"
+        itemName={confirmPaymentReversal?.description ?? ''}
+        amount={reversalPayment?.paidAmount ?? 0}
+        accountLabel={reversalPaymentAccount ? formatBankAccountLabel(reversalPaymentAccount) : 'Conta não localizada'}
+        currentBalance={reversalPaymentAccount?.balance}
+        nextBalance={reversalPaymentAccount && reversalPayment ? reversalPaymentAccount.balance + reversalPayment.paidAmount : undefined}
+        confirmText="Desfazer pagamento"
+        onConfirm={() => {
+          if (confirmPaymentReversal) undoExpensePayment(confirmPaymentReversal.id, selectedMonth);
+          setConfirmPaymentReversal(null);
+        }}
+        onCancel={() => setConfirmPaymentReversal(null)}
+      />
     </div>
   );
 }

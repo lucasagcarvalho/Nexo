@@ -840,7 +840,7 @@ Observação:
 
 ## ETAPA 14 — Criar privacidade global de valores
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -896,36 +896,45 @@ useMoneyVisibility
 
 ### Critérios de aceite
 
-- [ ] Um único controle altera toda a aplicação.
-- [ ] Estado visual do olho é claro.
-- [ ] Valores ficam realmente ocultos.
-- [ ] Labels permanecem visíveis.
-- [ ] Não há flash indevido de valores ao navegar.
-- [ ] Funciona em desktop/tablet/mobile.
-- [ ] Acessível por teclado.
-- [ ] `aria-label` informa Mostrar/Ocultar valores.
+- [x] Um único controle altera toda a aplicação.
+- [x] Estado visual do olho é claro.
+- [x] Valores ficam realmente ocultos.
+- [x] Labels permanecem visíveis.
+- [x] Não há flash indevido de valores ao navegar.
+- [x] Funciona em desktop/tablet/mobile.
+- [x] Acessível por teclado.
+- [x] `aria-label` informa Mostrar/Ocultar valores.
 
 ### Notas de implementação
 
 ```text
 State:
--
+- Estado global carregado no início da aplicação por `areMoneyValuesHidden`.
+- Alternância centralizada em `AppContent`, provocando nova renderização da aplicação.
 
 Componente:
--
+- Botão global no topo do layout com `Eye` / `EyeOff`.
+- `formatCurrency` e `formatCurrencyShort` mascaram valores como `R$ ••••••`.
+- `CurrencyInput` mostra `••••••` e fica somente leitura quando a privacidade está ativa.
+- Textos financeiros do motor de projeção usam o formatador central para respeitar a privacidade.
 
 Persistência:
--
+- Preferência persistida por dispositivo em `localStorage`.
+- Leitura inicial ocorre antes da primeira renderização autenticada para evitar flash indevido.
 
 Arquivos:
--
+- `src/lib/format.ts`
+- `src/App.tsx`
+- `src/components/Layout.tsx`
+- `src/components/ui.tsx`
+- `src/lib/finance/projection.ts`
 ```
 
 ---
 
 ## ETAPA 15 — Implementar tema claro, escuro e sistema
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Objetivo
@@ -962,32 +971,40 @@ Não usar cores fixas que prejudiquem o tema oposto.
 
 ### Critérios de aceite
 
-- [ ] Claro funciona.
-- [ ] Escuro funciona.
-- [ ] Sistema acompanha preferência do SO/navegador.
-- [ ] Contraste adequado.
-- [ ] Gráficos continuam legíveis.
-- [ ] Tooltips legíveis.
-- [ ] Preferência persistida.
+- [x] Claro funciona.
+- [x] Escuro funciona.
+- [x] Sistema acompanha preferência do SO/navegador.
+- [x] Contraste adequado.
+- [x] Gráficos continuam legíveis.
+- [x] Tooltips legíveis.
+- [x] Preferência persistida.
 
 ### Notas de implementação
 
 ```text
 Theme:
--
+- Criado modo `light`, `dark` e `system`.
+- Preferência lida no início da aplicação e aplicada no `documentElement`.
+- Modo `system` acompanha `prefers-color-scheme` enquanto ativo.
+- `color-scheme` acompanha o tema resolvido.
 
 Tokens/classes:
--
+- Overrides globais para utilitários Tailwind de fundo, texto, borda, hover, divisão, sombras, inputs e tooltips/gráficos.
+- Seletor segmentado no topo com ícones para claro, escuro e sistema.
+- Controle fica acessível em desktop/tablet/mobile.
 
 Arquivos:
--
+- `src/lib/theme.ts`
+- `src/App.tsx`
+- `src/components/Layout.tsx`
+- `src/index.css`
 ```
 
 ---
 
 ## ETAPA 16 — Corrigir lifecycle e sobreposição de tooltips
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P2
 
 ### Problema confirmado
@@ -1013,27 +1030,32 @@ modal/dialog/navigation → tooltip anterior fechado
 
 ### Critérios de aceite
 
-- [ ] Tooltip nunca fica preso.
-- [ ] Tooltip não aparece sobre modal após ação.
-- [ ] Click fecha tooltip.
-- [ ] Escape/modal não deixa tooltip órfão.
-- [ ] Mouse e teclado funcionam.
-- [ ] Tema claro/escuro.
+- [x] Tooltip nunca fica preso.
+- [x] Tooltip não aparece sobre modal após ação.
+- [x] Click fecha tooltip.
+- [x] Escape/modal não deixa tooltip órfão.
+- [x] Mouse e teclado funcionam.
+- [x] Tema claro/escuro.
 
 ### Notas de implementação
 
 ```text
 Causa:
--
+- Tooltip era renderizado em portal com `z-[9999]`, ficando acima de modais.
+- Clique no elemento filho não limpava timer/estado do tooltip antes da ação abrir modal ou navegar.
 
 Correção:
--
+- `Tooltip` central passou a limpar timer e estado em `mouseleave`, `blur`, `pointerdown`, `Escape`, `scroll`, `resize`, `popstate` e evento global `nexo:close-tooltips`.
+- `Modal` dispara `nexo:close-tooltips` ao abrir.
+- Portal do tooltip passou para `z-40`, abaixo do modal (`z-50`).
 
 Componentes:
--
+- `Tooltip`
+- `Modal`
+- `IconButton` herda o comportamento pelo tooltip compartilhado.
 
 Arquivos:
--
+- `src/components/ui.tsx`
 ```
 
 ---
@@ -1042,7 +1064,7 @@ Arquivos:
 
 ## ETAPA 17 — Padronizar confirmação antes de alterar saldo
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Objetivo
@@ -1105,25 +1127,35 @@ Continuar mesmo assim
 
 ### Critérios de aceite
 
-- [ ] Recebimento exige confirmação final.
-- [ ] Pagamento exige confirmação final.
-- [ ] Estorno exige confirmação.
-- [ ] Saldo antes/depois aparece quando aplicável.
-- [ ] Valor negativo gera alerta.
-- [ ] Nada é gravado antes da confirmação.
-- [ ] Duplo clique não duplica evento.
+- [x] Recebimento exige confirmação final.
+- [x] Pagamento exige confirmação final.
+- [x] Estorno exige confirmação.
+- [x] Saldo antes/depois aparece quando aplicável.
+- [x] Valor negativo gera alerta.
+- [x] Nada é gravado antes da confirmação.
+- [x] Duplo clique não duplica evento.
 
 ### Notas de implementação
 
 ```text
 Componente:
--
+- Criado `BalanceChangeConfirmDialog` para padronizar confirmação de alterações de saldo.
+- O componente mostra item, valor, conta, data, saldo atual, saldo após e alerta opcional.
+- Pagamento com saldo após negativo exibe alerta e oferece `Cancelar`, `Escolher outra conta` e `Continuar mesmo assim`.
 
 Fluxos:
--
+- Recebimento de receita coleta dados no modal existente e só grava após confirmação final.
+- Estorno de recebimento exige confirmação antes de chamar `undoIncomeReceipt`.
+- Pagamento de gasto em `Gastos` coleta dados no modal existente e só grava após confirmação final.
+- Estorno de pagamento em `Gastos` exige confirmação antes de chamar `undoExpensePayment`.
+- Pagamento/estorno de gastos em `Planejamento` passam pelo mesmo fluxo de confirmação.
+- Idempotência permanece protegida nas funções centrais do `DataContext`.
 
 Arquivos:
--
+- `src/components/ui.tsx`
+- `src/pages/ReceitasPage.tsx`
+- `src/pages/GastosPage.tsx`
+- `src/pages/PlanejamentoPage.tsx`
 ```
 
 ---
@@ -1132,7 +1164,7 @@ Arquivos:
 
 ## ETAPA 18 — Registrar conta pagadora da fatura
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Objetivo
@@ -1160,52 +1192,69 @@ O ledger apenas informa de onde o dinheiro saiu.
 
 ### Critérios de aceite
 
-- [ ] Conta obrigatória.
-- [ ] Confirmação antes do pagamento.
-- [ ] Valor correto.
-- [ ] Saldo antes/depois.
-- [ ] Saldo reduz.
-- [ ] Sem dupla contagem.
-- [ ] Movimento aparece no extrato da conta.
+- [x] Conta obrigatória.
+- [x] Confirmação antes do pagamento.
+- [x] Valor correto.
+- [x] Saldo antes/depois.
+- [x] Saldo reduz.
+- [x] Sem dupla contagem.
+- [x] Movimento aparece no extrato da conta.
 
 ### Notas de implementação
 
 ```text
 Model:
--
+- CardInvoicePayment vincula cartão, mês da fatura, conta, data, valor e transação do ledger.
+- AppData ganhou `cardInvoicePayments`, migration e seed com array vazio.
 
 Fluxo:
--
+- Detalhe do cartão abre modal "Pagar fatura" com conta obrigatória e data.
+- Confirmação mostra valor da fatura, conta, saldo atual e saldo após.
+- `payCardInvoice` cria transação `card_invoice_payment` negativa, reduz saldo da conta e marca a fatura como paga.
+- Listagem inicial de cartões mantém apenas abertura do detalhe; ações ficam dentro do cartão.
 
 Arquivos:
--
+- `src/lib/types.ts`
+- `src/lib/seed.ts`
+- `src/lib/storage.ts`
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/CartoesPage.tsx`
+- `test/finance.test.ts`
 ```
 
 ---
 
 ## ETAPA 19 — Estornar pagamento de fatura
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Critérios de aceite
 
-- [ ] Confirmação antes de estornar.
-- [ ] Fatura volta a pendente.
-- [ ] Valor retorna à conta.
-- [ ] Movimento original preservado.
-- [ ] `reversal` aparece no extrato.
-- [ ] Limite do cartão continua correto.
-- [ ] Idempotência.
+- [x] Confirmação antes de estornar.
+- [x] Fatura volta a pendente.
+- [x] Valor retorna à conta.
+- [x] Movimento original preservado.
+- [x] `reversal` aparece no extrato.
+- [x] Limite do cartão continua correto.
+- [x] Idempotência.
 
 ### Notas de implementação
 
 ```text
 Fluxo:
--
+- Detalhe do cartão troca fatura paga para ação "Desfazer pagamento".
+- Confirmação reutiliza `BalanceChangeConfirmDialog`, mostrando conta, saldo atual e saldo após devolução.
+- `undoCardInvoicePayment` remove o vínculo `CardInvoicePayment`, desmarca a fatura e cria transação `reversal`.
+- Faturas legadas marcadas como pagas sem vínculo bancário podem ser desmarcadas sem gerar movimento.
+- Reversão é idempotente: pagamento já estornado não cria nova reversão.
 
 Arquivos:
--
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/CartoesPage.tsx`
+- `test/finance.test.ts`
 ```
 
 ---
@@ -1923,6 +1972,12 @@ Arquivos:
 | 2026-08-31 | Etapa 10 — Estornar pagamento de gasto | Concluído | Pagamento de gasto pode ser revertido, devolvendo saldo e preservando histórico. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/GastosPage.tsx`, `src/pages/PlanejamentoPage.tsx`, `test/finance.test.ts` |
 | 2026-08-31 | Etapa 12 — Criar página de detalhe da conta | Concluído | Criada navegação `/contas/:accountId`, detalhe dedicado com dados, saldo, ledger, conciliação, edição contextual e ações internas de excluir/atualizar saldo; lista ficou apenas como abertura de conta. | `src/App.tsx`, `src/pages/ContasPage.tsx` |
 | 2026-08-31 | Etapa 13 — Criar extrato dentro da página da conta | Concluído | Adicionado extrato na página da conta com ordem cronológica, filtros, origem relacionada, estornos, contraparte de transferência e saldo após movimentação. | `src/pages/ContasPage.tsx` |
+| 2026-08-31 | Etapa 14 — Criar privacidade global de valores | Concluído | Criado controle global com olho aberto/fechado, preferência persistida e mascaramento central de valores monetários na aplicação. | `src/lib/format.ts`, `src/App.tsx`, `src/components/Layout.tsx`, `src/components/ui.tsx`, `src/lib/finance/projection.ts` |
+| 2026-08-31 | Etapa 15 — Implementar tema claro, escuro e sistema | Concluído | Criado seletor global de tema claro/escuro/sistema, preferência persistida, aplicação inicial sem flash e camada global de contraste para componentes, páginas, inputs, gráficos e tooltips. | `src/lib/theme.ts`, `src/App.tsx`, `src/components/Layout.tsx`, `src/index.css` |
+| 2026-08-31 | Etapa 16 — Corrigir lifecycle e sobreposição de tooltips | Concluído | Corrigido tooltip compartilhado para fechar antes de cliques, modais, navegação, Escape, scroll e resize, além de ficar abaixo do z-index dos modais. | `src/components/ui.tsx` |
+| 2026-08-31 | Etapa 17 — Padronizar confirmação antes de alterar saldo | Concluído | Criada confirmação final para recebimentos, pagamentos e estornos com saldo antes/depois e alerta de saldo negativo sem bloquear a operação. | `src/components/ui.tsx`, `src/pages/ReceitasPage.tsx`, `src/pages/GastosPage.tsx`, `src/pages/PlanejamentoPage.tsx` |
+| 2026-08-31 | Etapa 18 — Registrar conta pagadora da fatura | Concluído | Pagamento de fatura exige conta e confirmação, cria movimento `card_invoice_payment` negativo no ledger, reduz o saldo da conta e mantém a fatura sem dupla contagem nas despesas. | `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/storage.ts`, `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/CartoesPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 19 — Estornar pagamento de fatura | Concluído | Pagamento de fatura pode ser desfeito com confirmação, devolvendo saldo à conta, preservando o movimento original e criando `reversal` no extrato sem liberar limite indevidamente. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/CartoesPage.tsx`, `test/finance.test.ts` |
 
 ---
 

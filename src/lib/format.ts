@@ -1,4 +1,31 @@
+const MONEY_VALUES_HIDDEN_KEY = 'money-values-hidden';
+const HIDDEN_CURRENCY_VALUE = 'R$ ••••••';
+
+function readMoneyValuesHidden(): boolean {
+  try {
+    return localStorage.getItem(MONEY_VALUES_HIDDEN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+let moneyValuesHidden = readMoneyValuesHidden();
+
+export function areMoneyValuesHidden(): boolean {
+  return moneyValuesHidden;
+}
+
+export function setMoneyValuesHidden(hidden: boolean): void {
+  moneyValuesHidden = hidden;
+  try {
+    localStorage.setItem(MONEY_VALUES_HIDDEN_KEY, String(hidden));
+  } catch {
+    /* ignore unavailable storage */
+  }
+}
+
 export function formatCurrency(value: number): string {
+  if (moneyValuesHidden) return HIDDEN_CURRENCY_VALUE;
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
@@ -6,6 +33,7 @@ export function formatCurrency(value: number): string {
 }
 
 export function formatCurrencyShort(value: number): string {
+  if (moneyValuesHidden) return HIDDEN_CURRENCY_VALUE;
   if (Math.abs(value) >= 1000) {
     return 'R$ ' + (value / 1000).toFixed(1).replace('.', ',') + 'k';
   }

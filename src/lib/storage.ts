@@ -22,6 +22,7 @@ const APP_DATA_KEYS = [
   'accountTransactions',
   'incomeReceipts',
   'expensePayments',
+  'cardInvoicePayments',
   'people',
   'incomeTypes',
   'categoryBudgets',
@@ -210,6 +211,28 @@ function migrateExpense(old: any): Expense {
   };
 }
 
+function legacyAccountName(account: Pick<BankAccount, 'bank' | 'holder'> & { name?: string | null }): string {
+  const bank = account.bank?.trim() || account.name?.trim() || 'Conta';
+  const holder = account.holder?.trim();
+  return holder ? `${bank} · ${holder}` : bank;
+}
+
+function migrateBankAccount(old: any): BankAccount {
+  const bank = old.bank ?? old.name ?? '';
+  const holder = old.holder ?? '';
+  return {
+    id: old.id,
+    bank,
+    holder,
+    balance: Number.isFinite(old.balance) ? old.balance : 0,
+    accountType: old.accountType ?? null,
+    agency: old.agency ?? null,
+    accountNumber: old.accountNumber ?? null,
+    note: old.note,
+    name: old.name ?? legacyAccountName({ bank, holder }),
+  };
+}
+
 function todayDateKey(): string {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -283,7 +306,7 @@ export function migrateData(data: any): AppData {
     }];
   }
   const incomes: Income[] = (data.incomes ?? []).map(migrateIncome);
-  const bankAccounts: BankAccount[] = data.bankAccounts ?? [];
+  const bankAccounts: BankAccount[] = (data.bankAccounts ?? []).map(migrateBankAccount);
   const accountTransactions = ensureInitialBalanceTransactions(bankAccounts, data.accountTransactions ?? []);
   const validIncomeIds = new Set(incomes.map((income) => income.id));
   const scenarios: Scenario[] = (data.scenarios ?? []).map((scenario: any) => {
@@ -315,6 +338,7 @@ export function migrateData(data: any): AppData {
     accountTransactions,
     incomeReceipts: data.incomeReceipts ?? [],
     expensePayments: data.expensePayments ?? [],
+    cardInvoicePayments: data.cardInvoicePayments ?? [],
     people: data.people ?? [
       { id: 'p-lucas', name: 'Lucas', active: true },
       { id: 'p-thais', name: 'Thais', active: true },

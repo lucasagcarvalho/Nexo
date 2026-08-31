@@ -178,13 +178,25 @@ export interface PendingExpense {
   added: boolean;
 }
 
+export type BankAccountType =
+  | 'Conta Corrente'
+  | 'Conta Poupança'
+  | 'Conta de Pagamento'
+  | 'Conta Salário'
+  | 'Conta Digital'
+  | 'Conta Investimento'
+  | 'Outra';
+
 export interface BankAccount {
   id: string;
   bank: string;
-  name: string;
   holder: string;
   balance: number;
+  accountType?: BankAccountType | null;
+  agency?: string | null;
+  accountNumber?: string | null;
   note?: string;
+  name?: string;
 }
 
 export interface BankBalanceSnapshot {
@@ -193,6 +205,17 @@ export interface BankBalanceSnapshot {
   balance: number;
   date: string; // YYYY-MM-DD
   monthKey: string; // YYYY-MM
+}
+
+export interface CardInvoicePayment {
+  id: string;
+  cardId: string;
+  monthKey: string; // invoice month, YYYY-MM
+  date: string; // YYYY-MM-DD
+  accountId: string;
+  amount: number;
+  transactionId: string;
+  createdAt: string;
 }
 
 export type AccountTransactionKind =
@@ -266,6 +289,7 @@ export interface AppData {
   accountTransactions?: AccountTransaction[];
   incomeReceipts?: IncomeReceipt[];
   expensePayments?: ExpensePayment[];
+  cardInvoicePayments?: CardInvoicePayment[];
   people: PersonEntry[];
   incomeTypes: string[];
   categoryBudgets: CategoryBudget[];

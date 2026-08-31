@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedData } from '../src/lib/seed';
 import { migrateData } from '../src/lib/storage';
-import type { AppData, CardPurchase, CreditCard, Debt, Expense, ExpensePayment, Income, IncomeReceipt } from '../src/lib/types';
+import type { AppData, CardInvoicePayment, CardPurchase, CreditCard, Debt, Expense, ExpensePayment, Income, IncomeReceipt } from '../src/lib/types';
 import { addMonths, currentMonthKey } from '../src/lib/format';
 import {
   cardInvoiceDetail,
   calculateAccountLedgerBalance,
   calculateTotalLedgerBalance,
+  createCardInvoicePaymentReversalTransaction,
+  createCardInvoicePaymentTransaction,
   createExpensePaymentReversalTransaction,
   createExpensePaymentTransaction,
   createIncomeReceiptReversalTransaction,
@@ -29,6 +31,7 @@ import {
   expenseAmountForMonth,
   getAccountBalanceSnapshotForMonth,
   getCardInvoiceForMonth,
+  getCardInvoicePaymentForMonth,
   getInvoiceStatus,
   getMonthHealthStatus,
   getMonthlyComparisonSummary,
@@ -245,6 +248,101 @@ test('transação de pagamento de gasto rejeita dados inválidos', () => {
   assert.equal(createExpensePaymentTransaction('exp-1', 'acc-1', Number.NaN, '2026-08-10', '2026-08'), null);
   assert.equal(createExpensePaymentTransaction('exp-1', 'acc-1', 100, '2026-08', '2026-08'), null);
   assert.equal(createExpensePaymentTransaction('exp-1', 'acc-1', 100, '2026-08-10', '2026/08'), null);
+});
+
+test('pagamento de fatura cria movimento negativo sem duplicar despesas do cartão', () => {
+  const data = baseData();
+  const invoiceTransaction = createCardInvoicePaymentTransaction(
+    'card-1',
+    'acc-1',
+    500,
+    '2026-08-10',
+    '2026-08',
+    'Pagamento da fatura Nubank.',
+  );
+  assert.ok(invoiceTransaction);
+  const payment: CardInvoicePayment = {
+    id: 'invoice-payment-1',
+    cardId: 'card-1',
+    monthKey: '2026-08',
+    date: '2026-08-10',
+    accountId: 'acc-1',
+    amount: 500,
+    transactionId: invoiceTransaction.id,
+    createdAt: invoiceTransaction.createdAt,
+  };
+  data.bankAccounts = [{ id: 'acc-1', bank: 'Nubank', name: 'Conta', holder: 'Lucas', balance: 1500 }];
+  data.incomes = [];
+  data.expenses = [];
+  data.cards = [card({ id: 'card-1' })];
+  data.purchases = [purchase({ id: 'pur-1', cardId: 'card-1', totalAmount: 500, installments: 1, firstInvoiceMonth: '2026-08' })];
+  data.debts = [];
+  data.cardInvoicePayments = [payment];
+  data.cardInvoiceStatus = { [invoiceStatusKey('card-1', '2026-08')]: true };
+  data.accountTransactions = [invoiceTransaction];
+
+  const summary = getMonthlyFinancialSummary(data, '2026-08');
+  const relatedTransaction = getTransactionByRelatedEntity(data, 'cardInvoice', 'card-1', '2026-08');
+
+  assert.equal(invoiceTransaction.kind, 'card_invoice_payment');
+  assert.equal(invoiceTransaction.amount, -500);
+  assert.equal(invoiceTransaction.relatedEntityType, 'cardInvoice');
+  assert.equal(invoiceTransaction.relatedEntityId, 'card-1');
+  assert.equal(invoiceTransaction.relatedMonthKey, '2026-08');
+  assert.equal(getCardInvoicePaymentForMonth(data, 'card-1', '2026-08')?.id, 'invoice-payment-1');
+  assert.equal(getTransactionsForAccount(data, 'acc-1')[0].id, invoiceTransaction.id);
+  assert.equal(relatedTransaction?.id, invoiceTransaction.id);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), -500);
+  assert.equal(summary.cardExpenses, 500);
+  assert.equal(summary.totalExpenses, 500);
+});
+
+test('transação de pagamento de fatura rejeita dados inválidos', () => {
+  assert.equal(createCardInvoicePaymentTransaction('', 'acc-1', 100, '2026-08-10', '2026-08'), null);
+  assert.equal(createCardInvoicePaymentTransaction('card-1', '', 100, '2026-08-10', '2026-08'), null);
+  assert.equal(createCardInvoicePaymentTransaction('card-1', 'acc-1', 0, '2026-08-10', '2026-08'), null);
+  assert.equal(createCardInvoicePaymentTransaction('card-1', 'acc-1', Number.NaN, '2026-08-10', '2026-08'), null);
+  assert.equal(createCardInvoicePaymentTransaction('card-1', 'acc-1', 100, '2026-08', '2026-08'), null);
+  assert.equal(createCardInvoicePaymentTransaction('card-1', 'acc-1', 100, '2026-08-10', '2026/08'), null);
+});
+
+test('estorno de pagamento de fatura preserva movimento original e zera ledger', () => {
+  const data = baseData();
+  const invoiceTransaction = createCardInvoicePaymentTransaction('card-1', 'acc-1', 500, '2026-08-10', '2026-08');
+  assert.ok(invoiceTransaction);
+  data.cards = [card({ id: 'card-1', limit: 1000 })];
+  data.purchases = [purchase({ id: 'pur-1', cardId: 'card-1', totalAmount: 500, installments: 1, firstInvoiceMonth: '2026-08' })];
+  data.cardInvoicePayments = [{
+    id: 'invoice-payment-1',
+    cardId: 'card-1',
+    monthKey: '2026-08',
+    date: '2026-08-10',
+    accountId: 'acc-1',
+    amount: 500,
+    transactionId: invoiceTransaction.id,
+    createdAt: invoiceTransaction.createdAt,
+  }];
+  data.cardInvoiceStatus = { [invoiceStatusKey('card-1', '2026-08')]: true };
+  data.accountTransactions = [invoiceTransaction];
+
+  assert.equal(isInvoicePaid(data, 'card-1', '2026-08'), true);
+  assert.equal(cardUtilization(data, data.cards[0], '2026-09').available, 1000);
+
+  const reversal = createCardInvoicePaymentReversalTransaction(data, 'card-1', '2026-08', '2026-08-11');
+  assert.ok(reversal);
+  data.cardInvoicePayments = data.cardInvoicePayments.filter((payment) => payment.id !== 'invoice-payment-1');
+  data.cardInvoiceStatus = {};
+  data.accountTransactions = [...data.accountTransactions, reversal];
+
+  assert.equal(reversal.kind, 'reversal');
+  assert.equal(reversal.amount, 500);
+  assert.equal(reversal.reversalOfTransactionId, invoiceTransaction.id);
+  assert.equal(isTransactionReversed(data, invoiceTransaction.id), true);
+  assert.equal(getCardInvoicePaymentForMonth(data, 'card-1', '2026-08'), null);
+  assert.equal(isInvoicePaid(data, 'card-1', '2026-08'), false);
+  assert.equal(cardUtilization(data, data.cards[0], '2026-09').available, 500);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), 0);
+  assert.equal(createCardInvoicePaymentReversalTransaction(data, 'card-1', '2026-08'), null);
 });
 
 test('estorno de pagamento mensal de gasto restaura saldo por ledger', () => {
@@ -1031,6 +1129,44 @@ test('migração cria saldo inicial no ledger sem alterar cálculos existentes',
   assert.equal(accountProjection.accountsBalance, 1000);
 });
 
+test('migração preserva conta bancária legada com nome compatível', () => {
+  const legacyData = seedData();
+  legacyData.bankAccounts = [{ id: 'acc-1', bank: 'Banco', name: 'Conta Principal', holder: 'Lucas', balance: 1000 }];
+
+  const migrated = migrateData(legacyData);
+
+  assert.equal(migrated.bankAccounts[0].bank, 'Banco');
+  assert.equal(migrated.bankAccounts[0].holder, 'Lucas');
+  assert.equal(migrated.bankAccounts[0].name, 'Conta Principal');
+  assert.equal(migrated.bankAccounts[0].accountType, null);
+  assert.equal(migrated.bankAccounts[0].agency, null);
+  assert.equal(migrated.bankAccounts[0].accountNumber, null);
+});
+
+test('migração aceita conta bancária sem nome e mantém novos campos', () => {
+  const legacyData = seedData();
+  legacyData.bankAccounts = [{
+    id: 'acc-1',
+    bank: 'Nubank',
+    holder: 'Thais',
+    balance: 2500,
+    accountType: 'Conta Digital',
+    agency: '0001',
+    accountNumber: '12345-6',
+    note: 'Conta do dia a dia',
+  }];
+
+  const migrated = migrateData(legacyData);
+
+  assert.equal(migrated.bankAccounts[0].bank, 'Nubank');
+  assert.equal(migrated.bankAccounts[0].holder, 'Thais');
+  assert.equal(migrated.bankAccounts[0].name, 'Nubank · Thais');
+  assert.equal(migrated.bankAccounts[0].accountType, 'Conta Digital');
+  assert.equal(migrated.bankAccounts[0].agency, '0001');
+  assert.equal(migrated.bankAccounts[0].accountNumber, '12345-6');
+  assert.equal(migrated.bankAccounts[0].note, 'Conta do dia a dia');
+});
+
 test('migração inicializa recebimentos de receita de forma compatível', () => {
   const legacyData = seedData();
   delete (legacyData as Partial<AppData>).incomeReceipts;
@@ -1047,6 +1183,15 @@ test('migração inicializa pagamentos de gasto de forma compatível', () => {
   const migrated = migrateData(legacyData);
 
   assert.deepEqual(migrated.expensePayments, []);
+});
+
+test('migração inicializa pagamentos de fatura de forma compatível', () => {
+  const legacyData = seedData();
+  delete (legacyData as Partial<AppData>).cardInvoicePayments;
+
+  const migrated = migrateData(legacyData);
+
+  assert.deepEqual(migrated.cardInvoicePayments, []);
 });
 
 test('migração de saldo inicial é idempotente por conta', () => {

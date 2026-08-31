@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import { LayoutDashboard, Eye, TrendingUp, Wallet, CreditCard, Landmark, BarChart3, CalendarDays, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, Building2, ChevronLeftCircle, ChevronRightCircle, AlertCircle, XCircle, Activity } from 'lucide-react';
+import { LayoutDashboard, Eye, EyeOff, TrendingUp, Wallet, CreditCard, Landmark, BarChart3, CalendarDays, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, Building2, ChevronLeftCircle, ChevronRightCircle, AlertCircle, XCircle, Activity, Sun, Moon, Monitor } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { monthLabel } from '@/lib/format';
+import type { ThemeMode } from '@/lib/theme';
 import { Tooltip } from '@/components/ui';
 
 export type PageId = 'dashboard' | 'visao-geral' | 'receitas' | 'gastos' | 'cartoes' | 'contas' | 'dividas' | 'projecao' | 'analise' | 'planejamento' | 'configuracoes';
@@ -11,6 +12,10 @@ export type PageId = 'dashboard' | 'visao-geral' | 'receitas' | 'gastos' | 'cart
 interface LayoutProps {
   current: PageId;
   onNavigate: (page: PageId) => void;
+  moneyValuesHidden: boolean;
+  onToggleMoneyValuesHidden: () => void;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
   children: ReactNode;
 }
 
@@ -30,7 +35,7 @@ const MENU_ITEMS: { id: PageId; label: string; icon: typeof LayoutDashboard }[] 
 
 const SIDEBAR_KEY = 'sidebar-collapsed';
 
-export function Layout({ current, onNavigate, children }: LayoutProps) {
+export function Layout({ current, onNavigate, moneyValuesHidden, onToggleMoneyValuesHidden, themeMode, onThemeModeChange, children }: LayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem(SIDEBAR_KEY) === 'true'; } catch { return false; }
@@ -89,7 +94,24 @@ export function Layout({ current, onNavigate, children }: LayoutProps) {
             </button>
             <MonthSelector />
           </div>
-          <span className="hidden md:block text-xs text-gray-400">Controle e planejamento financeiro</span>
+          <div className="flex items-center gap-2">
+            <ThemeSelector themeMode={themeMode} onChange={onThemeModeChange} />
+            <Tooltip text={moneyValuesHidden ? 'Mostrar valores' : 'Ocultar valores'}>
+              <button
+                type="button"
+                onClick={onToggleMoneyValuesHidden}
+                aria-label={moneyValuesHidden ? 'Mostrar valores' : 'Ocultar valores'}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  moneyValuesHidden
+                    ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:text-blue-600'
+                }`}
+              >
+                {moneyValuesHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </Tooltip>
+            <span className="hidden md:block text-xs text-gray-400">Controle e planejamento financeiro</span>
+          </div>
         </header>
 
         <main className="flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full">
@@ -97,6 +119,36 @@ export function Layout({ current, onNavigate, children }: LayoutProps) {
           {children}
         </main>
       </div>
+    </div>
+  );
+}
+
+function ThemeSelector({ themeMode, onChange }: { themeMode: ThemeMode; onChange: (mode: ThemeMode) => void }) {
+  const options: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
+    { mode: 'light', label: 'Tema claro', icon: Sun },
+    { mode: 'dark', label: 'Tema escuro', icon: Moon },
+    { mode: 'system', label: 'Tema do sistema', icon: Monitor },
+  ];
+
+  return (
+    <div className="inline-flex items-center rounded-lg bg-gray-100 p-1">
+      {options.map(({ mode, label, icon: Icon }) => (
+        <Tooltip key={mode} text={label}>
+          <button
+            type="button"
+            onClick={() => onChange(mode)}
+            aria-label={label}
+            aria-pressed={themeMode === mode}
+            className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              themeMode === mode
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-gray-500 hover:bg-white hover:text-gray-800'
+            }`}
+          >
+            <Icon size={15} />
+          </button>
+        </Tooltip>
+      ))}
     </div>
   );
 }

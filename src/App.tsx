@@ -15,6 +15,10 @@ import { ProjecaoPage } from '@/pages/ProjecaoPage';
 import { AnalisePage } from '@/pages/AnalisePage';
 import { PlanejamentoPage } from '@/pages/PlanejamentoPage';
 import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
+import { areMoneyValuesHidden, setMoneyValuesHidden } from '@/lib/format';
+import { applyThemeMode, persistThemeMode, readThemeMode, type ThemeMode } from '@/lib/theme';
+
+applyThemeMode(readThemeMode());
 
 function routeFromLocation(): { page: PageId; accountId: string | null } {
   const [, firstSegment, secondSegment] = window.location.pathname.split('/');
@@ -32,6 +36,8 @@ function AppContent() {
   const initialRoute = routeFromLocation();
   const [page, setPage] = useState<PageId>(initialRoute.page);
   const [accountId, setAccountId] = useState<string | null>(initialRoute.accountId);
+  const [moneyValuesHidden, setMoneyValuesHiddenState] = useState(() => areMoneyValuesHidden());
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => readThemeMode());
 
   const navigate = (nextPage: PageId) => {
     setPage(nextPage);
@@ -53,6 +59,27 @@ function AppContent() {
     setAccountId(null);
     window.history.pushState(null, '', '/contas');
   };
+
+  const toggleMoneyValuesHidden = () => {
+    const next = !moneyValuesHidden;
+    setMoneyValuesHidden(next);
+    setMoneyValuesHiddenState(next);
+  };
+
+  const setThemeMode = (nextThemeMode: ThemeMode) => {
+    persistThemeMode(nextThemeMode);
+    applyThemeMode(nextThemeMode);
+    setThemeModeState(nextThemeMode);
+  };
+
+  useEffect(() => {
+    applyThemeMode(themeMode);
+    if (themeMode !== 'system' || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => applyThemeMode('system');
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, [themeMode]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -85,7 +112,14 @@ function AppContent() {
   return (
     <MonthProvider>
       <DataProvider>
-        <Layout current={page} onNavigate={navigate}>
+        <Layout
+          current={page}
+          onNavigate={navigate}
+          moneyValuesHidden={moneyValuesHidden}
+          onToggleMoneyValuesHidden={toggleMoneyValuesHidden}
+          themeMode={themeMode}
+          onThemeModeChange={setThemeMode}
+        >
           {page === 'dashboard' && <DashboardPage onNavigate={navigate} />}
           {page === 'visao-geral' && <VisaoGeralPage />}
           {page === 'receitas' && <ReceitasPage />}

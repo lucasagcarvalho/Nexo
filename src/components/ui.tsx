@@ -1,6 +1,6 @@
 import { type ReactNode, useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { parseCurrencyFromDigits, formatCurrencyInput, currentMonthKey, formatMonthBR } from '@/lib/format';
+import { areMoneyValuesHidden, parseCurrencyFromDigits, formatCurrency, formatCurrencyInput, currentMonthKey, formatMonthBR } from '@/lib/format';
 import { Plus, Search } from 'lucide-react';
 
 interface CardProps {
@@ -152,6 +152,9 @@ interface ModalProps {
 export function Modal({ open, onClose, title, children, footer, size = 'md' }: ModalProps) {
   const [mounted, setMounted] = useState(open);
   useEffect(() => {
+    if (open && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexo:close-tooltips'));
+    }
     if (open) setMounted(true);
     else {
       const t = setTimeout(() => setMounted(false), 0);
@@ -366,6 +369,93 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel, confi
   );
 }
 
+interface BalanceChangeConfirmDialogProps {
+  open: boolean;
+  title: string;
+  itemName: string;
+  amount: number;
+  accountLabel: string;
+  date?: string;
+  currentBalance?: number;
+  nextBalance?: number;
+  warning?: string | null;
+  confirmText?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onChooseAnotherAccount?: () => void;
+}
+
+export function BalanceChangeConfirmDialog({
+  open,
+  title,
+  itemName,
+  amount,
+  accountLabel,
+  date,
+  currentBalance,
+  nextBalance,
+  warning,
+  confirmText = 'Confirmar',
+  onConfirm,
+  onCancel,
+  onChooseAnotherAccount,
+}: BalanceChangeConfirmDialogProps) {
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title={title}
+      size="sm"
+      footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
+          {warning && onChooseAnotherAccount && (
+            <Button variant="secondary" onClick={onChooseAnotherAccount}>Escolher outra conta</Button>
+          )}
+          <Button onClick={onConfirm}>{confirmText}</Button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">{itemName}</p>
+          <p className="text-lg font-bold text-gray-900">{formatCurrency(amount)}</p>
+        </div>
+        <div className="space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">Conta</span>
+            <span className="font-medium text-gray-800 text-right">{accountLabel}</span>
+          </div>
+          {date && (
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Data</span>
+              <span className="font-medium text-gray-800">{date}</span>
+            </div>
+          )}
+          {currentBalance !== undefined && (
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Saldo atual</span>
+              <span className="font-medium text-gray-800">{formatCurrency(currentBalance)}</span>
+            </div>
+          )}
+          {nextBalance !== undefined && (
+            <div className="flex justify-between gap-3 border-t border-gray-200 pt-2">
+              <span className="font-semibold text-gray-700">Saldo após</span>
+              <span className={`font-bold ${nextBalance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(nextBalance)}</span>
+            </div>
+          )}
+        </div>
+        {warning && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-semibold text-amber-700">Atenção</p>
+            <p className="mt-1 text-sm text-amber-700">{warning}</p>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 interface EmptyStateProps {
   icon?: ReactNode;
   title: string;
@@ -398,6 +488,7 @@ export function CurrencyInput({ label, value, onChange, placeholder, required, a
   const [display, setDisplay] = useState(() => value !== 0 ? formatCurrencyInput(Math.abs(value)) : '');
   const [isNegative, setIsNegative] = useState(value < 0);
   const focusedRef = useRef(false);
+  const valuesHidden = areMoneyValuesHidden();
 
   useEffect(() => {
     if (!focusedRef.current) {
@@ -449,11 +540,12 @@ export function CurrencyInput({ label, value, onChange, placeholder, required, a
           <input
             type="text"
             inputMode="numeric"
-            value={display}
+            value={valuesHidden ? '••••••' : display}
             onChange={handleChange}
             onFocus={handleFocus}
             onBlur={handleBlur}
-            placeholder={placeholder ?? '0,00'}
+            placeholder={valuesHidden ? '••••••' : placeholder ?? '0,00'}
+            readOnly={valuesHidden}
             required={required}
             className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
           />
@@ -462,11 +554,12 @@ export function CurrencyInput({ label, value, onChange, placeholder, required, a
           <button
             type="button"
             onClick={toggleNegative}
+            disabled={valuesHidden}
             className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
               isNegative
                 ? 'bg-rose-50 border-rose-300 text-rose-600'
                 : 'bg-gray-50 border-gray-300 text-gray-400 hover:bg-gray-100'
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-50`}
             title="Alternar saldo negativo"
           >
             −
@@ -585,7 +678,17 @@ export function Tooltip({ text, children, side = 'top', className = '' }: Toolti
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
 
+  const closeTooltip = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setShow(false);
+  }, []);
+
   const handleEnter = () => {
+    if (!text) return;
+    closeTooltip();
     timerRef.current = setTimeout(() => {
       if (wrapperRef.current) {
         const rect = wrapperRef.current.getBoundingClientRect();
@@ -604,21 +707,45 @@ export function Tooltip({ text, children, side = 'top', className = '' }: Toolti
       setShow(true);
     }, 400);
   };
-  const handleLeave = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setShow(false);
-  };
+
+  useEffect(() => {
+    const handleGlobalClose = () => closeTooltip();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeTooltip();
+    };
+    window.addEventListener('resize', handleGlobalClose);
+    window.addEventListener('scroll', handleGlobalClose, true);
+    window.addEventListener('popstate', handleGlobalClose);
+    window.addEventListener('nexo:close-tooltips', handleGlobalClose);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('resize', handleGlobalClose);
+      window.removeEventListener('scroll', handleGlobalClose, true);
+      window.removeEventListener('popstate', handleGlobalClose);
+      window.removeEventListener('nexo:close-tooltips', handleGlobalClose);
+      document.removeEventListener('keydown', handleKeyDown);
+      closeTooltip();
+    };
+  }, [closeTooltip]);
 
   const translateClass = side === 'top' || side === 'bottom' ? '-translate-x-1/2' : '-translate-y-1/2';
 
   return (
     <>
-      <div ref={wrapperRef} className={`relative inline-flex ${className}`} onMouseEnter={handleEnter} onMouseLeave={handleLeave} onFocus={handleEnter} onBlur={handleLeave}>
+      <div
+        ref={wrapperRef}
+        className={`relative inline-flex ${className}`}
+        onMouseEnter={handleEnter}
+        onMouseLeave={closeTooltip}
+        onFocus={handleEnter}
+        onBlur={closeTooltip}
+        onPointerDownCapture={closeTooltip}
+      >
         {children}
       </div>
       {show && text && typeof document !== 'undefined' && document.body && createPortal(
         <div
-          className={`fixed z-[9999] ${translateClass} max-w-[min(17rem,calc(100vw-2rem))] px-2.5 py-1.5 bg-gray-900 text-white text-xs leading-snug rounded-lg whitespace-normal break-words pointer-events-none shadow-lg`}
+          className={`fixed z-40 ${translateClass} max-w-[min(17rem,calc(100vw-2rem))] px-2.5 py-1.5 bg-gray-900 text-white text-xs leading-snug rounded-lg whitespace-normal break-words pointer-events-none shadow-lg`}
           style={{ top: `${coords.top}px`, left: `${coords.left}px` }}
         >
           {text}

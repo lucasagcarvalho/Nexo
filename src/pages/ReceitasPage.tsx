@@ -2,10 +2,10 @@ import { useState, useMemo, useCallback } from 'react';
 import { Plus, Edit2, Trash2, Copy, Power, TrendingUp, Repeat, Calendar, CalendarRange, AlertCircle, CheckCircle2, Undo2 } from 'lucide-react';
 import { useData, getActiveVigencia, applyVigenciaChange, applyMonthOverride } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { formatCurrency, formatMonthBR, currentMonthKey, uid, compareMonths } from '@/lib/format';
+import { formatCurrency, formatMonthBR, formatDateBR, currentMonthKey, uid, compareMonths } from '@/lib/format';
 import { formatBankAccountLabel } from '@/lib/finance/accountRules';
 import type { Income, IncomeType, IncomeKind, Person } from '@/lib/types';
-import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, CurrencyInput, MonthPicker, PersonSelect, IconButton } from '@/components/ui';
+import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, CurrencyInput, MonthPicker, PersonSelect, IconButton, BalanceChangeConfirmDialog } from '@/components/ui';
 
 type ModalMode = 'add' | 'edit';
 type IncomeVisibilityFilter = 'active' | 'inactive' | 'all';
@@ -34,6 +34,8 @@ export function ReceitasPage() {
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
   const [editing, setEditing] = useState<Income | null>(null);
   const [receiving, setReceiving] = useState<Income | null>(null);
+  const [confirmReceipt, setConfirmReceipt] = useState(false);
+  const [confirmReceiptReversal, setConfirmReceiptReversal] = useState<Income | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [visibilityFilter, setVisibilityFilter] = useState<IncomeVisibilityFilter>('active');
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
@@ -239,6 +241,11 @@ export function ReceitasPage() {
     });
   };
 
+  const requestReceiptConfirmation = () => {
+    if (!receiving || !receiptForm.accountId || receiptForm.amount <= 0 || !receiptForm.date) return;
+    setConfirmReceipt(true);
+  };
+
   const saveReceipt = () => {
     if (!receiving || !receiptForm.accountId || receiptForm.amount <= 0 || !receiptForm.date) return;
     receiveIncome({
@@ -249,8 +256,20 @@ export function ReceitasPage() {
       expectedAmount: getAmount(receiving),
       receivedAmount: receiptForm.amount,
     });
+    setConfirmReceipt(false);
     setReceiving(null);
   };
+
+  const selectedReceiptAccount = receiptForm.accountId
+    ? data.bankAccounts.find((account) => account.id === receiptForm.accountId) ?? null
+    : null;
+  const receiptNextBalance = selectedReceiptAccount ? selectedReceiptAccount.balance + receiptForm.amount : undefined;
+  const reversalReceipt = confirmReceiptReversal
+    ? (data.incomeReceipts ?? []).find((receipt) => receipt.incomeId === confirmReceiptReversal.id && receipt.monthKey === selectedMonth) ?? null
+    : null;
+  const reversalReceiptAccount = reversalReceipt
+    ? data.bankAccounts.find((account) => account.id === reversalReceipt.accountId) ?? null
+    : null;
 
   const getKindDescription = (inc: Income): string => {
     const status = inc.active ? 'Ativa' : 'Inativa';
@@ -363,7 +382,7 @@ export function ReceitasPage() {
                       <IconButton
                         icon={isReceived ? <Undo2 size={14} /> : <CheckCircle2 size={14} />}
                         label={isReceived ? 'Desfazer recebimento' : 'Receber receita'}
-                        onClick={() => (isReceived ? undoIncomeReceipt(inc.id, selectedMonth) : openReceive(inc))}
+                        onClick={() => (isReceived ? setConfirmReceiptReversal(inc) : openReceive(inc))}
                       />
                     )}
                     <IconButton icon={<Edit2 size={14} />} label="Editar receita" onClick={() => openEdit(inc)} />
@@ -517,13 +536,13 @@ export function ReceitasPage() {
       <Modal open={receiving !== null} onClose={() => setReceiving(null)} title="Registrar recebimento" footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setReceiving(null)}>Cancelar</Button>
-          <Button onClick={saveReceipt} disabled={!receiptForm.accountId || receiptForm.amount <= 0 || !receiptForm.date}>
-            Receber
+          <Button onClick={requestReceiptConfirmation} disabled={!receiptForm.accountId || receiptForm.amount <= 0 || !receiptForm.date}>
+            Revisar recebimento
           </Button>
         </div>
       }>
         {receiving && (
-          <form onSubmit={(e) => { e.preventDefault(); saveReceipt(); }} className="space-y-3">
+          <form onSubmit={(e) => { e.preventDefault(); requestReceiptConfirmation(); }} className="space-y-3">
             <div className="p-3 bg-emerald-50 rounded-lg">
               <p className="text-sm font-semibold text-emerald-700">{receiving.name}</p>
               <p className="text-xs text-gray-500">Previsto: {formatCurrency(getAmount(receiving))} · Dia {receiving.dueDay}</p>
@@ -535,6 +554,37 @@ export function ReceitasPage() {
           </form>
         )}
       </Modal>
+
+      <BalanceChangeConfirmDialog
+        open={confirmReceipt}
+        title="Confirmar recebimento?"
+        itemName={receiving?.name ?? ''}
+        amount={receiptForm.amount}
+        accountLabel={selectedReceiptAccount ? formatBankAccountLabel(selectedReceiptAccount) : 'Conta não selecionada'}
+        date={receiptForm.date ? formatDateBR(receiptForm.date) : undefined}
+        currentBalance={selectedReceiptAccount?.balance}
+        nextBalance={receiptNextBalance}
+        confirmText="Confirmar recebimento"
+        onConfirm={saveReceipt}
+        onCancel={() => setConfirmReceipt(false)}
+        onChooseAnotherAccount={() => setConfirmReceipt(false)}
+      />
+
+      <BalanceChangeConfirmDialog
+        open={confirmReceiptReversal !== null}
+        title="Desfazer recebimento?"
+        itemName={confirmReceiptReversal?.name ?? ''}
+        amount={reversalReceipt?.receivedAmount ?? (confirmReceiptReversal ? getAmount(confirmReceiptReversal) : 0)}
+        accountLabel={reversalReceiptAccount ? formatBankAccountLabel(reversalReceiptAccount) : 'Conta não localizada'}
+        currentBalance={reversalReceiptAccount?.balance}
+        nextBalance={reversalReceiptAccount && reversalReceipt ? reversalReceiptAccount.balance - reversalReceipt.receivedAmount : undefined}
+        confirmText="Desfazer recebimento"
+        onConfirm={() => {
+          if (confirmReceiptReversal) undoIncomeReceipt(confirmReceiptReversal.id, selectedMonth);
+          setConfirmReceiptReversal(null);
+        }}
+        onCancel={() => setConfirmReceiptReversal(null)}
+      />
 
       <ConfirmDialog
         open={!!confirmDelete}

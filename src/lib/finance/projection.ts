@@ -1,5 +1,5 @@
 import type { AppData, CardPurchase } from '../types';
-import { addMonths, currentMonthKey, generateMonthKeys, monthLabelShort, compareMonths } from '../format';
+import { addMonths, currentMonthKey, generateMonthKeys, monthLabelShort, compareMonths, formatCurrency } from '../format';
 import { getMonthlyFinancialSummary } from './monthlySummary';
 import { projectAccountBalance, totalBankBalance } from './accountRules';
 import { getCardMonthlyLimit, purchaseInstallmentForMonth } from './cardRules';
@@ -495,7 +495,7 @@ export function generateAlerts(data: AppData, projection: ProjectionResult): Fin
 }
 
 function formatCurrencyAbs(value: number): string {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(value));
+  return formatCurrency(Math.abs(value));
 }
 
 function severityRank(severity: FinancialAlertSeverity): number {

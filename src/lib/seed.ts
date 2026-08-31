@@ -63,6 +63,7 @@ export function seedData(): AppData {
     accountTransactions: [],
     incomeReceipts: [],
     expensePayments: [],
+    cardInvoicePayments: [],
     people: [
       { id: 'p-lucas', name: 'Lucas', active: true },
       { id: 'p-thais', name: 'Thais', active: true },

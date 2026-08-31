@@ -1,10 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import type { AccountTransaction, AppData, Income, IncomeReceipt, Expense, ExpensePayment, CreditCard, CardPurchase, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
+import type { AccountTransaction, AppData, Income, IncomeReceipt, Expense, ExpensePayment, CreditCard, CardPurchase, CardInvoicePayment, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
 import { loadLocalData, saveLocalData, loadRemoteData, saveRemoteData, resetData, migrateData } from '@/lib/storage';
 import { defaultCategoryClass } from '@/lib/seed';
 import { uid, currentMonthKey, addMonths, compareMonths } from '@/lib/format';
 import { getActiveVigencia as getFinanceActiveVigencia, invoiceStatusKey, isExpensePaidForMonth as getFinanceExpensePaidForMonth } from '@/lib/projection';
-import { calculateAccountLedgerBalance, createExpensePaymentReversalTransaction, createExpensePaymentTransaction, createIncomeReceiptReversalTransaction, createIncomeReceiptTransaction, createManualAdjustmentTransaction, getExpensePaymentForMonth, getIncomeReceiptForMonth } from '@/lib/finance/accountTransactionRules';
+import { formatBankAccountLabel } from '@/lib/finance/accountRules';
+import { calculateAccountLedgerBalance, createCardInvoicePaymentReversalTransaction, createCardInvoicePaymentTransaction, createExpensePaymentReversalTransaction, createExpensePaymentTransaction, createIncomeReceiptReversalTransaction, createIncomeReceiptTransaction, createManualAdjustmentTransaction, getCardInvoicePaymentForMonth, getExpensePaymentForMonth, getIncomeReceiptForMonth } from '@/lib/finance/accountTransactionRules';
 import { useAuth } from '@/store/AuthContext';
 
 interface DataContextValue {
@@ -94,6 +95,14 @@ interface DataContextValue {
   // Income types
   addIncomeType: (name: string) => void;
   // Card invoice status
+  payCardInvoice: (input: {
+    cardId: string;
+    monthKey: string;
+    date: string;
+    accountId: string;
+    amount: number;
+  }) => void;
+  undoCardInvoicePayment: (cardId: string, monthKey: string, date?: string) => void;
   toggleInvoicePaid: (cardId: string, monthKey: string) => void;
   isInvoicePaid: (cardId: string, monthKey: string) => boolean;
   // Reset
@@ -230,7 +239,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (!transaction) return prev;
 
       incomeName = income.name;
-      accountName = account.name;
+      accountName = formatBankAccountLabel(account);
       receivedAmount = transaction.amount;
       const receipt: IncomeReceipt = {
         id: uid(),
@@ -272,7 +281,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const account = prev.bankAccounts.find((item) => item.id === receipt.accountId);
 
       incomeName = income?.name ?? receipt.incomeId;
-      accountName = account?.name ?? receipt.accountId;
+      accountName = account ? formatBankAccountLabel(account) : receipt.accountId;
       reversedAmount = transaction.amount;
 
       return {
@@ -362,7 +371,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (!transaction) return prev;
 
       expenseName = expense.description;
-      accountName = account.name;
+      accountName = formatBankAccountLabel(account);
       paidAmount = Math.abs(transaction.amount);
       const payment: ExpensePayment = {
         id: uid(),
@@ -413,7 +422,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const account = prev.bankAccounts.find((item) => item.id === payment.accountId);
 
       expenseName = expense?.description ?? payment.expenseId;
-      accountName = account?.name ?? payment.accountId;
+      accountName = account ? formatBankAccountLabel(account) : payment.accountId;
       reversedAmount = Math.abs(transaction.amount);
 
       return {
@@ -697,7 +706,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       bankAccounts: [...prev.bankAccounts, newAccount],
       accountTransactions: [...(prev.accountTransactions ?? []), initialTransaction],
     }));
-    addHistory('criação', 'conta', `Conta "${account.name}" criada.`);
+    addHistory('criação', 'conta', `Conta "${formatBankAccountLabel(newAccount)}" criada.`);
   }, [addHistory]);
 
   const updateBankAccount = useCallback((id: string, updates: Partial<BankAccount>) => {
@@ -717,7 +726,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       incomeReceipts: (prev.incomeReceipts ?? []).filter((receipt) => receipt.accountId !== id),
       expensePayments: (prev.expensePayments ?? []).filter((payment) => payment.accountId !== id),
     }));
-    if (acc) addHistory('exclusão', 'conta', `Conta "${acc.name}" excluída.`);
+    if (acc) addHistory('exclusão', 'conta', `Conta "${formatBankAccountLabel(acc)}" excluída.`);
   }, [data.bankAccounts, addHistory]);
 
   const reconcileBankAccountBalance = useCallback((accountId: string, realBalance: number, date: string, note?: string) => {
@@ -726,7 +735,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setData((prev) => {
       const account = prev.bankAccounts.find((item) => item.id === accountId);
       if (!account) return prev;
-      accountName = account.name;
+      accountName = formatBankAccountLabel(account);
       const ledgerBalance = calculateAccountLedgerBalance(prev, accountId, date);
       adjustmentAmount = Math.round((realBalance - ledgerBalance) * 100) / 100;
       const monthKey = date.slice(0, 7);
@@ -824,6 +833,102 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addHistory('alteração', 'meta de cartão', `Meta de cartão alterada para ${monthKey}.`);
   }, [addHistory]);
 
+  const payCardInvoice = useCallback((input: {
+    cardId: string;
+    monthKey: string;
+    date: string;
+    accountId: string;
+    amount: number;
+  }) => {
+    let cardName = '';
+    let accountName = '';
+    let paidAmount = 0;
+    setData((prev) => {
+      const card = prev.cards.find((item) => item.id === input.cardId);
+      const account = prev.bankAccounts.find((item) => item.id === input.accountId);
+      if (!card || !account) return prev;
+      if (getCardInvoicePaymentForMonth(prev, input.cardId, input.monthKey)) return prev;
+      const transaction = createCardInvoicePaymentTransaction(
+        input.cardId,
+        input.accountId,
+        input.amount,
+        input.date,
+        input.monthKey,
+        `Pagamento da fatura "${card.name}" de ${input.monthKey}.`,
+      );
+      if (!transaction) return prev;
+
+      cardName = card.name;
+      accountName = formatBankAccountLabel(account);
+      paidAmount = Math.abs(transaction.amount);
+      const payment: CardInvoicePayment = {
+        id: uid(),
+        cardId: input.cardId,
+        monthKey: input.monthKey,
+        date: input.date,
+        accountId: input.accountId,
+        amount: paidAmount,
+        transactionId: transaction.id,
+        createdAt: transaction.createdAt,
+      };
+      const statusKey = invoiceStatusKey(input.cardId, input.monthKey);
+
+      return {
+        ...prev,
+        cardInvoicePayments: [...(prev.cardInvoicePayments ?? []), payment],
+        cardInvoiceStatus: { ...(prev.cardInvoiceStatus ?? {}), [statusKey]: true },
+        accountTransactions: [...(prev.accountTransactions ?? []), transaction],
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === input.accountId ? { ...item, balance: item.balance + transaction.amount } : item
+        )),
+      };
+    });
+    if (cardName) {
+      addHistory('pagamento', 'fatura', `Fatura "${cardName}" de ${input.monthKey} paga em "${accountName}" no valor de R$ ${paidAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
+
+  const undoCardInvoicePayment = useCallback((cardId: string, monthKey: string, date?: string) => {
+    let cardName = '';
+    let accountName = '';
+    let reversedAmount = 0;
+    setData((prev) => {
+      const payment = getCardInvoicePaymentForMonth(prev, cardId, monthKey);
+      if (!payment) {
+        const statusKey = invoiceStatusKey(cardId, monthKey);
+        if (!prev.cardInvoiceStatus?.[statusKey]) return prev;
+        const nextStatus = { ...(prev.cardInvoiceStatus ?? {}) };
+        delete nextStatus[statusKey];
+        return { ...prev, cardInvoiceStatus: nextStatus };
+      }
+      const transaction = (prev.accountTransactions ?? []).find((item) => item.id === payment.transactionId);
+      const reversal = createCardInvoicePaymentReversalTransaction(prev, cardId, monthKey, date);
+      if (!transaction || !reversal) return prev;
+      const card = prev.cards.find((item) => item.id === cardId);
+      const account = prev.bankAccounts.find((item) => item.id === payment.accountId);
+      const statusKey = invoiceStatusKey(cardId, monthKey);
+      const nextStatus = { ...(prev.cardInvoiceStatus ?? {}) };
+      delete nextStatus[statusKey];
+
+      cardName = card?.name ?? payment.cardId;
+      accountName = account ? formatBankAccountLabel(account) : payment.accountId;
+      reversedAmount = Math.abs(transaction.amount);
+
+      return {
+        ...prev,
+        cardInvoicePayments: (prev.cardInvoicePayments ?? []).filter((item) => item.id !== payment.id),
+        cardInvoiceStatus: nextStatus,
+        accountTransactions: [...(prev.accountTransactions ?? []), reversal],
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === payment.accountId ? { ...item, balance: item.balance - transaction.amount } : item
+        )),
+      };
+    });
+    if (cardName) {
+      addHistory('estorno', 'fatura', `Pagamento da fatura "${cardName}" de ${monthKey} em "${accountName}" desfeito no valor de R$ ${reversedAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
+
   const toggleInvoicePaid = useCallback((cardId: string, monthKey: string) => {
     const key = invoiceStatusKey(cardId, monthKey);
     setData((prev) => {
@@ -839,8 +944,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isInvoicePaidCb = useCallback((cardId: string, monthKey: string): boolean => {
-    return data.cardInvoiceStatus?.[invoiceStatusKey(cardId, monthKey)] ?? false;
-  }, [data.cardInvoiceStatus]);
+    return !!getCardInvoicePaymentForMonth(data, cardId, monthKey) || (data.cardInvoiceStatus?.[invoiceStatusKey(cardId, monthKey)] ?? false);
+  }, [data]);
 
   const resetAll = useCallback(() => {
     const fresh = resetData(localStorageUserId);
@@ -879,7 +984,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addBalanceSnapshot,
     addPerson, updatePerson, deletePerson, togglePerson,
     addIncomeType,
-    toggleInvoicePaid,
+    payCardInvoice, undoCardInvoicePayment, toggleInvoicePaid,
     isInvoicePaid: isInvoicePaidCb,
     resetAll,
     importData,

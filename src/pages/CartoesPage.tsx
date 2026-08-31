@@ -3,20 +3,19 @@ import { Plus, Edit2, Trash2, Copy, CreditCard as CreditCardIcon, ArrowLeft, Ale
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, getCardMonthlyLimit, getCardCommitmentSummary, getFutureInstallmentCalendar, type InvoiceStatus } from '@/lib/projection';
-import { formatCurrency, monthLabelShort, monthShort, formatMonthBR, addMonths, formatPercent } from '@/lib/format';
+import { cardProjection, cardUtilization, simulatePurchase, cardInvoiceDetail, purchaseInstallmentStatus, getInvoiceStatus, getCardMonthlyLimit, getCardCommitmentSummary, getFutureInstallmentCalendar, getCardInvoiceForMonth, type InvoiceStatus } from '@/lib/projection';
+import { formatCurrency, monthLabelShort, monthShort, formatMonthBR, addMonths, formatPercent, formatDateBR } from '@/lib/format';
+import { formatBankAccountLabel } from '@/lib/finance/accountRules';
 import type { CreditCard, CardPurchase } from '@/lib/types';
-import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, ProgressBar, EmptyState, CurrencyInput, PersonSelect, IconButton } from '@/components/ui';
+import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, ProgressBar, EmptyState, CurrencyInput, PersonSelect, IconButton, BalanceChangeConfirmDialog } from '@/components/ui';
 
 const CARD_COLORS = ['#EC4899', '#F59E0B', '#8B5CF6', '#3B82F6', '#10B981', '#EF4444', '#14B8A6', '#6B7280'];
 
 export function CartoesPage() {
-  const { data, addCard, updateCard, deleteCard, addPerson, toggleInvoicePaid, isInvoicePaid } = useData();
+  const { data, addCard, addPerson } = useData();
   const { selectedMonth } = useMonth();
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [cardModalOpen, setCardModalOpen] = useState(false);
-  const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
-  const [confirmDeleteCard, setConfirmDeleteCard] = useState<string | null>(null);
   const [expandedInstallmentMonth, setExpandedInstallmentMonth] = useState<string | null>(null);
 
   const [cardForm, setCardForm] = useState<Omit<CreditCard, 'id'>>({
@@ -72,24 +71,13 @@ export function CartoesPage() {
   }
 
   const openAddCard = () => {
-    setEditingCard(null);
     setCardForm({ name: '', bank: '', holder: '', limit: 0, closingDay: 1, dueDay: 1, color: '#3B82F6' });
-    setCardModalOpen(true);
-  };
-
-  const openEditCard = (card: CreditCard) => {
-    setEditingCard(card);
-    setCardForm({ ...card });
     setCardModalOpen(true);
   };
 
   const saveCard = () => {
     if (!cardForm.name) return;
-    if (editingCard) {
-      updateCard(editingCard.id, cardForm);
-    } else {
-      addCard(cardForm);
-    }
+    addCard(cardForm);
     setCardModalOpen(false);
   };
 
@@ -175,23 +163,11 @@ export function CartoesPage() {
                               <p className="text-xs text-gray-400">{card.bank} · {card.holder}</p>
                             </div>
                           </div>
-                          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                            <IconButton icon={<Edit2 size={14} />} label="Editar cartão" onClick={() => openEditCard(card)} />
-                            <IconButton icon={<Trash2 size={14} />} label="Excluir cartão" variant="danger" onClick={() => setConfirmDeleteCard(card.id)} />
-                          </div>
                         </div>
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm"><span className="text-gray-400">Limite</span><span className="font-medium text-gray-700">{formatCurrency(card.limit)}</span></div>
                           <div className="flex justify-between text-sm"><span className="text-gray-400">Fatura de {formatMonthBR(selectedMonth)}</span><span className="font-medium text-gray-900">{formatCurrency(util.currentInvoice)}</span></div>
                           <InvoiceStatusBadge data={data} card={card} monthKey={selectedMonth} invoiceAmount={util.currentInvoice} />
-                          {util.currentInvoice > 0 && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); toggleInvoicePaid(card.id, selectedMonth); }}
-                              className={`w-full text-sm font-medium py-2 px-3 rounded-lg transition-colors ${isInvoicePaid(card.id, selectedMonth) ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
-                            >
-                              {isInvoicePaid(card.id, selectedMonth) ? <><Circle size={14} className="inline mr-1" /> Desmarcar pagamento</> : <><CheckCircle2 size={14} className="inline mr-1" /> Marcar fatura como paga</>}
-                            </button>
-                          )}
                           <div className="flex justify-between text-sm"><span className="text-gray-400">Próxima fatura</span><span className="font-medium text-gray-700">{formatCurrency(util.nextInvoice)}</span></div>
                           <div className="flex justify-between text-sm"><span className="text-gray-400">Parcelado futuro</span><span className="font-medium text-amber-600">{formatCurrency(util.futureInstallments)}</span></div>
                           <div className="flex justify-between text-sm"><span className="text-gray-400">Maior fatura 6m</span><span className="font-medium text-blue-600">{formatCurrency(indicators?.highestInvoiceNextSixMonths ?? 0)}</span></div>
@@ -254,10 +230,10 @@ export function CartoesPage() {
         </Card>
       )}
 
-      <Modal open={cardModalOpen} onClose={() => setCardModalOpen(false)} title={editingCard ? 'Editar cartão' : 'Novo cartão'} footer={
+      <Modal open={cardModalOpen} onClose={() => setCardModalOpen(false)} title="Novo cartão" footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setCardModalOpen(false)}>Cancelar</Button>
-          <Button onClick={saveCard} disabled={!cardForm.name}>{editingCard ? 'Salvar' : 'Adicionar'}</Button>
+          <Button onClick={saveCard} disabled={!cardForm.name}>Adicionar</Button>
         </div>
       }>
         <form onSubmit={(e) => { e.preventDefault(); saveCard(); }} className="space-y-3">
@@ -283,24 +259,27 @@ export function CartoesPage() {
         </form>
       </Modal>
 
-      <ConfirmDialog
-        open={!!confirmDeleteCard}
-        title="Excluir cartão"
-        message="Tem certeza que deseja excluir este cartão? Todas as compras associadas também serão removidas."
-        onConfirm={() => { if (confirmDeleteCard) deleteCard(confirmDeleteCard); setConfirmDeleteCard(null); }}
-        onCancel={() => setConfirmDeleteCard(null)}
-        confirmText="Excluir"
-      />
     </div>
   );
 
   function CardDetail({ card, onBack }: { card: CreditCard; onBack: () => void }) {
-    const { data, addPurchase, updatePurchase, deletePurchase, duplicatePurchase, toggleInvoicePaid, isInvoicePaid } = useData();
+    const { data, updateCard, deleteCard, addPerson, addPurchase, updatePurchase, deletePurchase, duplicatePurchase, payCardInvoice, undoCardInvoicePayment, isInvoicePaid } = useData();
     const { selectedMonth } = useMonth();
+    const [cardModalOpen, setCardModalOpen] = useState(false);
+    const [confirmDeleteCard, setConfirmDeleteCard] = useState(false);
     const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
     const [editingPurchase, setEditingPurchase] = useState<CardPurchase | null>(null);
     const [confirmDeletePurchase, setConfirmDeletePurchase] = useState<string | null>(null);
     const [invoiceModalMonth, setInvoiceModalMonth] = useState<string | null>(null);
+    const [payingInvoice, setPayingInvoice] = useState<{ monthKey: string; amount: number } | null>(null);
+    const [confirmInvoicePayment, setConfirmInvoicePayment] = useState(false);
+    const [confirmInvoiceReversal, setConfirmInvoiceReversal] = useState<string | null>(null);
+
+    const [cardForm, setCardForm] = useState<Omit<CreditCard, 'id'>>({ ...card });
+    const [invoicePaymentForm, setInvoicePaymentForm] = useState({
+      date: '',
+      accountId: '',
+    });
 
     const [purchaseForm, setPurchaseForm] = useState({
       cardId: '', name: '', installmentAmount: 0, installments: 1, currentInstallment: 1,
@@ -326,6 +305,23 @@ export function CartoesPage() {
       });
       setShowImpact(false);
       setPurchaseModalOpen(true);
+    };
+
+    const openEditCurrentCard = () => {
+      setCardForm({ ...card });
+      setCardModalOpen(true);
+    };
+
+    const saveCurrentCard = () => {
+      if (!cardForm.name) return;
+      updateCard(card.id, cardForm);
+      setCardModalOpen(false);
+    };
+
+    const deleteCurrentCard = () => {
+      deleteCard(card.id);
+      setConfirmDeleteCard(false);
+      onBack();
     };
 
     const openEditPurchase = (pur: CardPurchase) => {
@@ -374,10 +370,68 @@ export function CartoesPage() {
 
     const invoiceItems = invoiceModalMonth ? cardInvoiceDetail(data, card.id, invoiceModalMonth) : [];
     const invoiceTotal = invoiceItems.reduce((s, i) => s + i.amount, 0);
+    const accountOptions = useMemo(() => [
+      { value: '', label: 'Selecione a conta' },
+      ...data.bankAccounts.map((account) => ({
+        value: account.id,
+        label: formatBankAccountLabel(account),
+      })),
+    ], [data.bankAccounts]);
+
+    const dateForDueDay = (monthKey: string, dueDay: number): string => {
+      const [year, month] = monthKey.split('-').map(Number);
+      const lastDay = new Date(year, month, 0).getDate();
+      const day = Math.min(Math.max(dueDay, 1), lastDay);
+      return `${monthKey}-${String(day).padStart(2, '0')}`;
+    };
+
+    const openInvoicePayment = (monthKey: string, amount: number) => {
+      if (amount <= 0 || isInvoicePaid(card.id, monthKey)) return;
+      setPayingInvoice({ monthKey, amount });
+      setInvoicePaymentForm({
+        date: dateForDueDay(monthKey, card.dueDay),
+        accountId: data.bankAccounts[0]?.id ?? '',
+      });
+    };
+
+    const requestInvoicePaymentConfirmation = () => {
+      if (!payingInvoice || !invoicePaymentForm.accountId || !invoicePaymentForm.date || payingInvoice.amount <= 0) return;
+      setConfirmInvoicePayment(true);
+    };
+
+    const saveInvoicePayment = () => {
+      if (!payingInvoice || !invoicePaymentForm.accountId || !invoicePaymentForm.date || payingInvoice.amount <= 0) return;
+      payCardInvoice({
+        cardId: card.id,
+        monthKey: payingInvoice.monthKey,
+        date: invoicePaymentForm.date,
+        accountId: invoicePaymentForm.accountId,
+        amount: payingInvoice.amount,
+      });
+      setConfirmInvoicePayment(false);
+      setPayingInvoice(null);
+    };
+
+    const selectedInvoicePaymentAccount = invoicePaymentForm.accountId
+      ? data.bankAccounts.find((account) => account.id === invoicePaymentForm.accountId) ?? null
+      : null;
+    const invoicePaymentNextBalance = selectedInvoicePaymentAccount && payingInvoice
+      ? selectedInvoicePaymentAccount.balance - payingInvoice.amount
+      : undefined;
+    const invoicePaymentWarning = invoicePaymentNextBalance !== undefined && invoicePaymentNextBalance < 0
+      ? `Este pagamento deixará a conta em ${formatCurrency(invoicePaymentNextBalance)}.`
+      : null;
+    const reversalInvoicePayment = confirmInvoiceReversal
+      ? (data.cardInvoicePayments ?? []).find((payment) => payment.cardId === card.id && payment.monthKey === confirmInvoiceReversal) ?? null
+      : null;
+    const reversalInvoicePaymentAccount = reversalInvoicePayment
+      ? data.bankAccounts.find((account) => account.id === reversalInvoicePayment.accountId) ?? null
+      : null;
 
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
           <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft size={20} className="text-gray-600" /></button>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded-full" style={{ backgroundColor: card.color }} />
@@ -385,6 +439,15 @@ export function CartoesPage() {
               <h1 className="text-2xl font-bold text-gray-900">{card.name}</h1>
               <p className="text-sm text-gray-500">{card.bank} · {card.holder}</p>
             </div>
+          </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={openEditCurrentCard}>
+              <Edit2 size={14} className="inline mr-1" /> Editar
+            </Button>
+            <Button variant="danger" onClick={() => setConfirmDeleteCard(true)}>
+              <Trash2 size={14} className="inline mr-1" /> Excluir
+            </Button>
           </div>
         </div>
 
@@ -407,12 +470,21 @@ export function CartoesPage() {
                 <InvoiceStatusBadge data={data} card={card} monthKey={selectedMonth} invoiceAmount={util.currentInvoice} />
                 <span className="text-xs text-gray-400">Vencimento: dia {card.dueDay} de {formatMonthBR(selectedMonth)}</span>
               </div>
-              <button
-                onClick={() => toggleInvoicePaid(card.id, selectedMonth)}
-                className={`text-sm font-medium py-2 px-4 rounded-lg transition-colors ${isInvoicePaid(card.id, selectedMonth) ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
-              >
-                {isInvoicePaid(card.id, selectedMonth) ? <><Circle size={14} className="inline mr-1" /> Desmarcar pagamento</> : <><CheckCircle2 size={14} className="inline mr-1" /> Marcar fatura como paga</>}
-              </button>
+              {isInvoicePaid(card.id, selectedMonth) ? (
+                <button
+                  onClick={() => setConfirmInvoiceReversal(selectedMonth)}
+                  className="text-sm font-medium py-2 px-4 rounded-lg transition-colors bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                >
+                  <Circle size={14} className="inline mr-1" /> Desfazer pagamento
+                </button>
+              ) : (
+                <button
+                  onClick={() => openInvoicePayment(selectedMonth, util.currentInvoice)}
+                  className="text-sm font-medium py-2 px-4 rounded-lg transition-colors bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                >
+                  <CheckCircle2 size={14} className="inline mr-1" /> Pagar fatura
+                </button>
+              )}
             </div>
           </Card>
         )}
@@ -560,12 +632,21 @@ export function CartoesPage() {
           invoiceModalMonth && invoiceTotal > 0 ? (
             <div className="flex items-center justify-between w-full">
               <InvoiceStatusBadge data={data} card={card} monthKey={invoiceModalMonth} invoiceAmount={invoiceTotal} />
-              <button
-                onClick={() => toggleInvoicePaid(card.id, invoiceModalMonth)}
-                className={`text-sm font-medium py-2 px-4 rounded-lg transition-colors ${isInvoicePaid(card.id, invoiceModalMonth) ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'}`}
-              >
-                {isInvoicePaid(card.id, invoiceModalMonth) ? <><Circle size={14} className="inline mr-1" /> Desmarcar pagamento</> : <><CheckCircle2 size={14} className="inline mr-1" /> Marcar fatura como paga</>}
-              </button>
+              {isInvoicePaid(card.id, invoiceModalMonth) ? (
+                <button
+                  onClick={() => setConfirmInvoiceReversal(invoiceModalMonth)}
+                  className="text-sm font-medium py-2 px-4 rounded-lg transition-colors bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                >
+                  <Circle size={14} className="inline mr-1" /> Desfazer pagamento
+                </button>
+              ) : (
+                <button
+                  onClick={() => openInvoicePayment(invoiceModalMonth, invoiceTotal)}
+                  className="text-sm font-medium py-2 px-4 rounded-lg transition-colors bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                >
+                  <CheckCircle2 size={14} className="inline mr-1" /> Pagar fatura
+                </button>
+              )}
             </div>
           ) : undefined
         }>
@@ -595,6 +676,97 @@ export function CartoesPage() {
             </div>
           )}
         </Modal>
+
+        <Modal open={payingInvoice !== null} onClose={() => setPayingInvoice(null)} title="Pagar fatura" footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPayingInvoice(null)}>Cancelar</Button>
+            <Button onClick={requestInvoicePaymentConfirmation} disabled={!invoicePaymentForm.accountId || !invoicePaymentForm.date || !payingInvoice || payingInvoice.amount <= 0}>
+              Revisar pagamento
+            </Button>
+          </div>
+        }>
+          {payingInvoice && (
+            <form onSubmit={(e) => { e.preventDefault(); requestInvoicePaymentConfirmation(); }} className="space-y-3">
+              <div className="p-3 bg-emerald-50 rounded-lg">
+                <p className="text-sm font-semibold text-emerald-700">{card.name} · {monthLabelShort(payingInvoice.monthKey)}</p>
+                <p className="text-xs text-gray-500">Total da fatura: {formatCurrency(payingInvoice.amount)}</p>
+              </div>
+              <Input label="Data paga" type="date" value={invoicePaymentForm.date} onChange={(v) => setInvoicePaymentForm({ ...invoicePaymentForm, date: v })} required />
+              <Select label="Conta pagadora" value={invoicePaymentForm.accountId} onChange={(v) => setInvoicePaymentForm({ ...invoicePaymentForm, accountId: v })} options={accountOptions} required />
+              <button type="submit" className="hidden" aria-hidden="true" />
+            </form>
+          )}
+        </Modal>
+
+        <BalanceChangeConfirmDialog
+          open={confirmInvoicePayment}
+          title="Confirmar pagamento?"
+          itemName={payingInvoice ? `${card.name} · ${monthLabelShort(payingInvoice.monthKey)}` : card.name}
+          amount={payingInvoice?.amount ?? 0}
+          accountLabel={selectedInvoicePaymentAccount ? formatBankAccountLabel(selectedInvoicePaymentAccount) : 'Conta não selecionada'}
+          date={invoicePaymentForm.date ? formatDateBR(invoicePaymentForm.date) : undefined}
+          currentBalance={selectedInvoicePaymentAccount?.balance}
+          nextBalance={invoicePaymentNextBalance}
+          warning={invoicePaymentWarning}
+          confirmText={invoicePaymentWarning ? 'Continuar mesmo assim' : 'Confirmar pagamento'}
+          onConfirm={saveInvoicePayment}
+          onCancel={() => setConfirmInvoicePayment(false)}
+          onChooseAnotherAccount={() => setConfirmInvoicePayment(false)}
+        />
+
+        <BalanceChangeConfirmDialog
+          open={confirmInvoiceReversal !== null}
+          title="Desfazer pagamento?"
+          itemName={confirmInvoiceReversal ? `${card.name} · ${monthLabelShort(confirmInvoiceReversal)}` : card.name}
+          amount={reversalInvoicePayment?.amount ?? (confirmInvoiceReversal ? getCardInvoiceForMonth(data.purchases, card.id, confirmInvoiceReversal) : 0)}
+          accountLabel={reversalInvoicePaymentAccount ? formatBankAccountLabel(reversalInvoicePaymentAccount) : 'Conta não localizada'}
+          currentBalance={reversalInvoicePaymentAccount?.balance}
+          nextBalance={reversalInvoicePaymentAccount && reversalInvoicePayment ? reversalInvoicePaymentAccount.balance + reversalInvoicePayment.amount : undefined}
+          confirmText="Desfazer pagamento"
+          onConfirm={() => {
+            if (confirmInvoiceReversal) undoCardInvoicePayment(card.id, confirmInvoiceReversal);
+            setConfirmInvoiceReversal(null);
+          }}
+          onCancel={() => setConfirmInvoiceReversal(null)}
+        />
+
+        <Modal open={cardModalOpen} onClose={() => setCardModalOpen(false)} title="Editar cartão" footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setCardModalOpen(false)}>Cancelar</Button>
+            <Button onClick={saveCurrentCard} disabled={!cardForm.name}>Salvar</Button>
+          </div>
+        }>
+          <form onSubmit={(e) => { e.preventDefault(); saveCurrentCard(); }} className="space-y-3">
+            <Input label="Nome do cartão" value={cardForm.name} onChange={(v) => setCardForm({ ...cardForm, name: v })} required />
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Banco" value={cardForm.bank} onChange={(v) => setCardForm({ ...cardForm, bank: v })} />
+              <PersonSelect label="Titular" value={cardForm.holder} onChange={(v) => setCardForm({ ...cardForm, holder: v })} people={data.people} onAddPerson={addPerson} />
+            </div>
+            <CurrencyInput label="Limite" value={cardForm.limit} onChange={(v) => setCardForm({ ...cardForm, limit: v })} required />
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Dia de fechamento" type="number" value={cardForm.closingDay} onChange={(v) => setCardForm({ ...cardForm, closingDay: parseInt(v) || 1 })} />
+              <Input label="Dia de vencimento" type="number" value={cardForm.dueDay} onChange={(v) => setCardForm({ ...cardForm, dueDay: parseInt(v) || 1 })} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cor de identificação</label>
+              <div className="flex gap-2 flex-wrap">
+                {CARD_COLORS.map((c) => (
+                  <button key={c} type="button" onClick={() => setCardForm({ ...cardForm, color: c })} className={`w-8 h-8 rounded-full border-2 ${cardForm.color === c ? 'border-gray-900' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+                ))}
+              </div>
+            </div>
+            <button type="submit" className="hidden" aria-hidden="true" />
+          </form>
+        </Modal>
+
+        <ConfirmDialog
+          open={confirmDeleteCard}
+          title="Excluir cartão"
+          message="Tem certeza que deseja excluir este cartão? Todas as compras associadas também serão removidas."
+          onConfirm={deleteCurrentCard}
+          onCancel={() => setConfirmDeleteCard(false)}
+          confirmText="Excluir"
+        />
 
         <ConfirmDialog
           open={!!confirmDeletePurchase}
