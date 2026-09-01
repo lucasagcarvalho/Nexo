@@ -4,7 +4,7 @@ import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { formatCurrency, formatMonthBR, formatDateBR } from '@/lib/format';
 import { formatBankAccountLabel } from '@/lib/finance/accountRules';
-import { calculateAccountLedgerBalance, getTransactionsForAccount, getTransferTransactions, isTransactionReversed } from '@/lib/finance/accountTransactionRules';
+import { calculateAccountLedgerBalance, getAccountReconciliationPreview, getTransactionsForAccount, getTransferTransactions, isTransactionReversed } from '@/lib/finance/accountTransactionRules';
 import type { AccountTransaction, AccountTransactionKind, AppData, BankAccount, BankAccountType } from '@/lib/types';
 import { Card, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, CurrencyInput, PersonSelect, MonthPicker, Badge } from '@/components/ui';
 
@@ -156,6 +156,7 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BankAccount | null>(null);
   const [snapshotModal, setSnapshotModal] = useState<BankAccount | null>(null);
+  const [confirmSnapshotAdjustment, setConfirmSnapshotAdjustment] = useState(false);
   const [historyModal, setHistoryModal] = useState<BankAccount | null>(null);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [confirmTransfer, setConfirmTransfer] = useState(false);
@@ -205,6 +206,7 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
 
   const openSnapshot = (acc: BankAccount) => {
     setSnapshotModal(acc);
+    setConfirmSnapshotAdjustment(false);
     setSnapshotAmount(acc.balance);
     const today = new Date();
     setSnapshotDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
@@ -213,6 +215,7 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
   const saveSnapshot = () => {
     if (!snapshotModal || !snapshotDate) return;
     reconcileBankAccountBalance(snapshotModal.id, snapshotAmount, snapshotDate, `Conciliação manual de ${formatMonthBR(snapshotDate.slice(0, 7))}.`);
+    setConfirmSnapshotAdjustment(false);
     setSnapshotModal(null);
   };
 
@@ -253,41 +256,69 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
       .filter((s) => s.accountId === accountId)
       .sort((a, b) => b.date.localeCompare(a.date));
 
-  const snapshotLedgerBalance = snapshotModal && snapshotDate
-    ? calculateAccountLedgerBalance(data, snapshotModal.id, snapshotDate)
-    : 0;
-  const snapshotDifference = Math.round((snapshotAmount - snapshotLedgerBalance) * 100) / 100;
+  const snapshotPreview = snapshotModal && snapshotDate
+    ? getAccountReconciliationPreview(data, snapshotModal.id, snapshotAmount, snapshotDate)
+    : null;
+  const snapshotLedgerBalance = snapshotPreview?.ledgerBalance ?? 0;
+  const snapshotDifference = snapshotPreview?.difference ?? 0;
+  const snapshotNeedsAdjustment = snapshotPreview?.needsAdjustment ?? false;
 
   const snapshotModalContent = (
-    <Modal open={!!snapshotModal} onClose={() => setSnapshotModal(null)} title="Conciliar saldo" size="sm" footer={
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={() => setSnapshotModal(null)}>Cancelar</Button>
-        <Button onClick={saveSnapshot} disabled={!snapshotDate}>Confirmar ajuste</Button>
-      </div>
-    }>
-      {snapshotModal && (
-        <form onSubmit={(e) => { e.preventDefault(); saveSnapshot(); }} className="space-y-3">
-          <p className="text-sm text-gray-600">Confira o saldo de <strong>{formatBankAccountLabel(snapshotModal)}</strong> antes de confirmar.</p>
-          <Input label="Data da conciliação" type="date" value={snapshotDate} onChange={setSnapshotDate} required />
-          <CurrencyInput label="Saldo real informado" value={snapshotAmount} onChange={setSnapshotAmount} allowNegative required />
-          <div className="space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
-            <div className="flex justify-between gap-3">
-              <span className="text-gray-500">Saldo calculado</span>
-              <span className="font-medium text-gray-800">{formatCurrency(snapshotLedgerBalance)}</span>
+    <>
+      <Modal open={!!snapshotModal} onClose={() => { setSnapshotModal(null); setConfirmSnapshotAdjustment(false); }} title="Conciliar saldo" size="sm" footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => { setSnapshotModal(null); setConfirmSnapshotAdjustment(false); }}>Cancelar</Button>
+          <Button variant="secondary" onClick={() => { setSnapshotModal(null); setConfirmSnapshotAdjustment(false); }}>Revisar extrato</Button>
+          <Button onClick={() => setConfirmSnapshotAdjustment(true)} disabled={!snapshotDate || !snapshotPreview}>
+            {snapshotNeedsAdjustment ? 'Criar ajuste' : 'Registrar conferência'}
+          </Button>
+        </div>
+      }>
+        {snapshotModal && (
+          <form onSubmit={(e) => { e.preventDefault(); if (snapshotPreview) setConfirmSnapshotAdjustment(true); }} className="space-y-3">
+            <p className="text-sm text-gray-600">Compare o saldo real de <strong>{formatBankAccountLabel(snapshotModal)}</strong> com o ledger antes de criar qualquer ajuste.</p>
+            <Input label="Data da conciliação" type="date" value={snapshotDate} onChange={setSnapshotDate} required />
+            <CurrencyInput label="Saldo real informado" value={snapshotAmount} onChange={setSnapshotAmount} allowNegative required />
+            <div className="space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Ledger</span>
+                <span className="font-medium text-gray-800">{formatCurrency(snapshotLedgerBalance)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Saldo real banco</span>
+                <span className="font-medium text-gray-800">{formatCurrency(snapshotAmount)}</span>
+              </div>
+              <div className="flex justify-between gap-3 border-t border-gray-200 pt-2">
+                <span className="font-semibold text-gray-700">Diferença</span>
+                <span className={`font-bold ${snapshotDifference >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(snapshotDifference)}</span>
+              </div>
             </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-gray-500">Saldo informado</span>
-              <span className="font-medium text-gray-800">{formatCurrency(snapshotAmount)}</span>
+            <div className={`rounded-lg border p-3 ${snapshotNeedsAdjustment ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+              <p className={`text-sm font-semibold ${snapshotNeedsAdjustment ? 'text-amber-700' : 'text-emerald-700'}`}>
+                {snapshotNeedsAdjustment ? 'Ajuste necessário' : 'Sem diferença'}
+              </p>
+              <p className={`mt-1 text-sm ${snapshotNeedsAdjustment ? 'text-amber-700' : 'text-emerald-700'}`}>
+                {snapshotNeedsAdjustment
+                  ? 'O snapshot será registrado como conferência e um ajuste manual será criado somente após confirmação.'
+                  : 'O snapshot será registrado como conferência, sem criar movimentação de ajuste.'}
+              </p>
             </div>
-            <div className="flex justify-between gap-3 border-t border-gray-200 pt-2">
-              <span className="font-semibold text-gray-700">Ajuste manual</span>
-              <span className={`font-bold ${snapshotDifference >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(snapshotDifference)}</span>
-            </div>
-          </div>
-          <button type="submit" className="hidden" aria-hidden="true" />
-        </form>
-      )}
-    </Modal>
+            <button type="submit" className="hidden" aria-hidden="true" />
+          </form>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmSnapshotAdjustment}
+        title={snapshotNeedsAdjustment ? 'Criar ajuste de conciliação?' : 'Registrar conferência?'}
+        message={snapshotNeedsAdjustment
+          ? `Será registrado um snapshot de conferência e criado um ajuste manual de ${formatCurrency(snapshotDifference)} para igualar o ledger ao saldo real informado.`
+          : 'Será registrado um snapshot de conferência sem criar ajuste manual, pois o ledger já bate com o saldo real informado.'}
+        confirmText={snapshotNeedsAdjustment ? 'Confirmar ajuste' : 'Registrar conferência'}
+        onConfirm={saveSnapshot}
+        onCancel={() => setConfirmSnapshotAdjustment(false)}
+      />
+    </>
   );
 
   if (accountId) {

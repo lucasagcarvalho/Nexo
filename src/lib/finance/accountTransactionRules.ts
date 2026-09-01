@@ -14,6 +14,16 @@ export interface TotalLedgerBalanceComparison {
   difference: number;
 }
 
+export interface AccountReconciliationPreview {
+  accountId: string;
+  date: string;
+  monthKey: string;
+  realBalance: number;
+  ledgerBalance: number;
+  difference: number;
+  needsAdjustment: boolean;
+}
+
 function isValidDateKey(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -91,6 +101,27 @@ export function calculateTotalLedgerBalance(data: AppData, untilDate?: string): 
   ), 0);
 }
 
+export function getAccountReconciliationPreview(
+  data: AppData,
+  accountId: string,
+  realBalance: number,
+  date: string,
+): AccountReconciliationPreview | null {
+  if (!data.bankAccounts.some((account) => account.id === accountId)) return null;
+  if (!isValidDateKey(date) || !Number.isFinite(realBalance)) return null;
+  const ledgerBalance = calculateAccountLedgerBalance(data, accountId, date);
+  const difference = Math.round((realBalance - ledgerBalance) * 100) / 100;
+  return {
+    accountId,
+    date,
+    monthKey: date.slice(0, 7),
+    realBalance,
+    ledgerBalance,
+    difference,
+    needsAdjustment: Math.abs(difference) >= 0.01,
+  };
+}
+
 export function getAccountLedgerBalanceComparisons(data: AppData, untilDate?: string): AccountLedgerBalanceComparison[] {
   return data.bankAccounts.map((account) => {
     const accountBalance = Number.isFinite(account.balance) ? account.balance : 0;
@@ -136,6 +167,52 @@ export function createManualAdjustmentTransaction(
     amount: roundedAmount,
     kind: 'manual_adjustment',
     note: note || 'Conciliação manual de saldo.',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function createGoalContributionTransaction(
+  goalId: string,
+  accountId: string,
+  amount: number,
+  date: string,
+  note?: string,
+): AccountTransaction | null {
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (!goalId || !accountId || !isValidDateKey(date) || !Number.isFinite(roundedAmount) || roundedAmount <= 0) return null;
+  return {
+    id: uid(),
+    accountId,
+    date,
+    monthKey: date.slice(0, 7),
+    amount: -roundedAmount,
+    kind: 'goal_contribution',
+    relatedEntityType: 'goal',
+    relatedEntityId: goalId,
+    note: note || 'Aporte em objetivo financeiro.',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function createGoalWithdrawalTransaction(
+  goalId: string,
+  accountId: string,
+  amount: number,
+  date: string,
+  note?: string,
+): AccountTransaction | null {
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (!goalId || !accountId || !isValidDateKey(date) || !Number.isFinite(roundedAmount) || roundedAmount <= 0) return null;
+  return {
+    id: uid(),
+    accountId,
+    date,
+    monthKey: date.slice(0, 7),
+    amount: roundedAmount,
+    kind: 'goal_withdrawal',
+    relatedEntityType: 'goal',
+    relatedEntityId: goalId,
+    note: note || 'Resgate de objetivo financeiro.',
     createdAt: new Date().toISOString(),
   };
 }

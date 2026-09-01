@@ -49,6 +49,86 @@ export interface CashflowTimelineItem {
   originPage: CashflowTimelineOriginPage;
 }
 
+export interface AccountNegativeBalanceRisk {
+  accountId: string;
+  accountLabel: string;
+  monthKey: string;
+  date: string;
+  day: number;
+  openingBalance: number;
+  balance: number;
+  deficit: number;
+  triggeringItem: CashflowTimelineItem;
+}
+
+export interface PaymentPriorityRecommendation {
+  id: string;
+  rank: number;
+  item: CashflowTimelineItem;
+  accountId: string;
+  accountLabel: string;
+  dueDate: string;
+  amount: number;
+  balanceBeforePayment: number;
+  balanceAfterPayment: number;
+  lowestBalanceAfterPayment: number;
+  riskLevel: 'baixo' | 'medio' | 'alto';
+  reason: string;
+}
+
+export interface PreventiveTransferSuggestion {
+  id: string;
+  fromAccountId: string;
+  fromAccountLabel: string;
+  toAccountId: string;
+  toAccountLabel: string;
+  monthKey: string;
+  suggestedDate: string;
+  amount: number;
+  destinationDeficitDate: string;
+  destinationDeficit: number;
+  originLowestBalanceAfterTransfer: number;
+  reason: string;
+}
+
+export interface FinancialFlowAuditTransaction {
+  id: string;
+  date: string;
+  kind: string;
+  amount: number;
+}
+
+export interface FinancialFlowAuditAccount {
+  accountId: string;
+  accountLabel: string;
+  openingBalance: number;
+  inflows: number;
+  outflows: number;
+  transfersIn: number;
+  transfersOut: number;
+  adjustments: number;
+  closingBalance: number;
+  transactions: FinancialFlowAuditTransaction[];
+}
+
+export interface FinancialFlowAuditReport {
+  monthKey: string;
+  income: number;
+  totalExpenses: number;
+  result: number;
+  accountBalances: FinancialFlowAuditAccount[];
+  availableBalance: number;
+  ledgerBalance: number;
+  storedAccountsBalance: number;
+  projectedAccountsBalance: number;
+  checks: {
+    noDoubleCounting: boolean;
+    ledgerExplainsStoredBalances: boolean;
+    dashboardMatchesAccounts: boolean;
+    projectionMatchesAccounts: boolean;
+  };
+}
+
 export interface MonthProjection {
   monthKey: string;
   income: number;

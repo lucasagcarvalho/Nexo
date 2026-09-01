@@ -1,8 +1,9 @@
 import type { AppData, CardPurchase } from '../types';
-import { addMonths, currentMonthKey, generateMonthKeys, monthLabelShort, compareMonths, formatCurrency } from '../format';
+import { addMonths, currentMonthKey, generateMonthKeys, monthLabelShort, compareMonths, formatCurrency, formatDateBR } from '../format';
 import { getMonthlyFinancialSummary } from './monthlySummary';
 import { projectAccountBalance, projectAccountsByMonth, totalBankBalance } from './accountRules';
 import { getCardMonthlyLimit, purchaseInstallmentForMonth } from './cardRules';
+import { getFirstAccountNegativeBalanceRiskForMonth } from './cashflowTimelineRules';
 import { getExceededCategoryBudgets } from './categoryBudgetRules';
 import { debtPaymentForMonth } from './debtRules';
 import { expenseAmountForMonth } from './expenseRules';
@@ -425,6 +426,18 @@ export function generateAlerts(data: AppData, projection: ProjectionResult): Fin
       `${formatCurrencyAbs(dueConcentration.amount)} vencem em uma janela de ${dueConcentration.endDay - dueConcentration.startDay + 1} dias.`,
       current.monthKey,
       dueConcentration.amount,
+    );
+  }
+
+  const intramonthRisk = getFirstAccountNegativeBalanceRiskForMonth(data, current.monthKey);
+  if (intramonthRisk) {
+    addAlert(
+      'critical',
+      'intramonth-negative-balance',
+      `${intramonthRisk.accountLabel} ficará negativa em ${formatDateBR(intramonthRisk.date).slice(0, 5)}`,
+      `Após "${intramonthRisk.triggeringItem.label}", o saldo projetado da conta será ${formatCurrency(intramonthRisk.balance)}, com déficit de ${formatCurrencyAbs(intramonthRisk.deficit)}.`,
+      intramonthRisk.monthKey,
+      intramonthRisk.balance,
     );
   }
 

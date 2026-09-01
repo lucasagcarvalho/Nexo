@@ -1719,7 +1719,7 @@ UI:
 
 ## ETAPA 28 — Detectar saldo negativo ao longo do mês
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P1
 
 ### Objetivo
@@ -1735,20 +1735,24 @@ Nubank ficará em -R$ 50
 
 ### Critérios de aceite
 
-- [ ] Detecta primeira data negativa.
-- [ ] Mostra conta.
-- [ ] Mostra déficit.
-- [ ] Considera receitas anteriores.
-- [ ] Considera pagamentos anteriores.
+- [x] Detecta primeira data negativa.
+- [x] Mostra conta.
+- [x] Mostra déficit.
+- [x] Considera receitas anteriores.
+- [x] Considera pagamentos anteriores.
 
 ### Notas de implementação
 
 ```text
 Engine:
--
+- Criado `getAccountNegativeBalanceRisksForMonth`.
+- Criado `getFirstAccountNegativeBalanceRiskForMonth`.
+- O motor reconstrói o saldo inicial do mês por conta a partir do saldo atual e dos movimentos realizados da timeline.
+- A análise percorre a timeline por data e detecta a primeira quebra de caixa de cada conta.
 
 Alertas:
--
+- `generateAlerts` agora adiciona alerta crítico `intramonth-negative-balance`.
+- O alerta informa data, conta, saldo projetado e déficit.
 ```
 
 ---
@@ -1757,7 +1761,7 @@ Alertas:
 
 ## ETAPA 29 — Criar análise "o que pagar primeiro"
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P2
 
 Considerar:
@@ -1773,26 +1777,31 @@ Não pagar automaticamente.
 
 ### Critérios de aceite
 
-- [ ] Recomenda, não executa.
-- [ ] Explica motivo.
-- [ ] Respeita datas.
-- [ ] Considera caixa futuro.
+- [x] Recomenda, não executa.
+- [x] Explica motivo.
+- [x] Respeita datas.
+- [x] Considera caixa futuro.
 
 ### Notas de implementação
 
 ```text
 Engine:
--
+- Criado `getPaymentPriorityRecommendations`.
+- O ranking considera pendências previstas, vencimento, conta pagadora sugerida, saldo antes/depois e menor saldo conhecido no restante do mês.
+- Itens sem conta registrada recebem sugestão da conta com melhor folga projetada.
+- A regra não altera pagamentos nem saldos.
 
 UI:
--
+- Modal de detalhe da Visão Geral ganhou seção "O que pagar primeiro".
+- Cada recomendação mostra prioridade, motivo, conta, risco e valor.
+- Clique abre a tela de origem do compromisso.
 ```
 
 ---
 
 ## ETAPA 30 — Sugerir transferências preventivas
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P2
 
 ### Exemplo
@@ -1807,19 +1816,24 @@ Transferir R$ 350 do Itaú antes de 10/09.
 
 ### Critérios de aceite
 
-- [ ] Não executa automaticamente.
-- [ ] Não prejudica origem.
-- [ ] Considera eventos futuros da origem.
-- [ ] Sugere valor/data.
+- [x] Não executa automaticamente.
+- [x] Não prejudica origem.
+- [x] Considera eventos futuros da origem.
+- [x] Sugere valor/data.
 
 ### Notas de implementação
 
 ```text
 Engine:
--
+- Criado `getPreventiveTransferSuggestions`.
+- A regra usa o risco intramês por conta como destino e avalia contas de origem alternativas.
+- A origem só é sugerida quando mantém saldo mínimo não negativo após considerar eventos futuros conhecidos.
+- A sugestão informa valor, data limite, origem e destino, sem criar movimentação.
 
 UI:
--
+- Modal de detalhe da Visão Geral ganhou seção "Transferências preventivas".
+- Cada sugestão mostra origem, destino, motivo, data limite e valor.
+- Clique abre a tela de Contas para ação manual.
 ```
 
 ---
@@ -1828,7 +1842,7 @@ UI:
 
 ## ETAPA 31 — Reposicionar snapshots como conferência
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P1
 
 ### Regra
@@ -1851,19 +1865,25 @@ Opções:
 
 ### Critérios de aceite
 
-- [ ] Diferença explícita.
-- [ ] Confirmação.
-- [ ] Histórico preservado.
-- [ ] Conciliação dentro da página da conta.
+- [x] Diferença explícita.
+- [x] Confirmação.
+- [x] Histórico preservado.
+- [x] Conciliação dentro da página da conta.
 
 ### Notas de implementação
 
 ```text
 Fluxo:
--
+- Criado preview de conciliação com saldo real, ledger, diferença e necessidade de ajuste.
+- Modal de conciliação mostra snapshot como conferência antes de criar qualquer ajuste.
+- Usuário pode cancelar, revisar extrato ou confirmar a criação do ajuste.
+- Ajuste manual só é criado após confirmação final.
 
 Arquivos:
--
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/ContasPage.tsx`
+- `test/finance.test.ts`
 ```
 
 ---
@@ -1872,7 +1892,7 @@ Arquivos:
 
 ## ETAPA 32 — Auditoria completa de fluxo por conta
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P0
 
 ### Cenário
@@ -1925,31 +1945,34 @@ Saldo disponível total = R$ 14.700
 
 ### Critérios de aceite
 
-- [ ] Valores centavo a centavo.
-- [ ] Nenhuma dupla contagem.
-- [ ] Estornos restauram estado.
-- [ ] Ledger explica saldos.
-- [ ] Dashboard bate com Contas.
-- [ ] Projeção bate.
-- [ ] Tema claro validado.
-- [ ] Tema escuro validado.
-- [ ] Privacidade validada.
-- [ ] `npm test`.
-- [ ] `npm run typecheck`.
-- [ ] `npm run lint`.
-- [ ] `npm run build`.
+- [x] Valores centavo a centavo.
+- [x] Nenhuma dupla contagem.
+- [x] Estornos restauram estado.
+- [x] Ledger explica saldos.
+- [x] Dashboard bate com Contas.
+- [x] Projeção bate.
+- [x] Tema claro validado.
+- [x] Tema escuro validado.
+- [x] Privacidade validada.
+- [x] `npm test`.
+- [x] `npm run typecheck`.
+- [x] `npm run lint`.
+- [x] `npm run build`.
 
 ### Notas de implementação
 
 ```text
 Cenários:
--
+- Criado relatório `getFinancialFlowAuditReport`.
+- Coberto cenário com saldo inicial, receita, despesas e transferência entre contas.
+- Validado resultado mensal de R$ 7.700 e saldo disponível total de R$ 14.700.
+- Revalidada suíte completa com estornos, conciliação, mês seguinte, extrato, Dashboard, tema e privacidade.
 
 Problemas:
--
+- Nenhum problema novo identificado na auditoria automatizada.
 
 Correções:
--
+- Adicionado relatório auditável para explicar saldos por conta a partir do ledger.
 ```
 
 ---
@@ -1958,7 +1981,7 @@ Correções:
 
 ## ETAPA 33 — Preparar integração futura com Objetivos
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P1
 
 ### Preparar somente infraestrutura
@@ -1998,18 +2021,24 @@ Não vira receita/despesa global.
 
 ### Critérios de aceite
 
-- [ ] Ledger preparado.
-- [ ] Neutralidade documentada.
-- [ ] Nenhum objetivo implementado antecipadamente.
+- [x] Ledger preparado.
+- [x] Neutralidade documentada.
+- [x] Nenhum objetivo implementado antecipadamente.
 
 ### Notas de implementação
 
 ```text
 Preparação:
--
+- Tipos `goal_contribution`, `goal_withdrawal` e `relatedEntityType = goal` já estavam previstos no ledger.
+- Criadas funções `createGoalContributionTransaction` e `createGoalWithdrawalTransaction`.
+- Aporte sai da conta como movimentação negativa.
+- Resgate entra na conta como movimentação positiva.
+- Movimentações de objetivo afetam apenas ledger/saldo de conta e não entram em receita/despesa global.
+- Nenhuma tela, meta, prazo, rendimento ou projeção adaptativa foi implementada.
 
 Arquivos:
--
+- `src/lib/finance/accountTransactionRules.ts`
+- `test/finance.test.ts`
 ```
 
 ---
@@ -2044,6 +2073,12 @@ Arquivos:
 | 2026-08-31 | Etapa 25 — Criar projeção mensal por conta | Concluído | Criado engine `projectAccountsByMonth` com projeção por conta, saldo final encadeado, componentes por tipo de fluxo e agregado que soma contas sem duplicar transferências. | `src/lib/finance/accountRules.ts`, `test/finance.test.ts` |
 | 2026-08-31 | Etapa 26 — Evoluir `projectMonths` preservando compatibilidade | Concluído | `projectMonths` passou a expor cashflow mensal por conta e saldos de abertura, fechamento e disponível, mantendo os campos antigos e centralizando os novos contratos em `finance/types`. | `src/lib/finance/types.ts`, `src/lib/finance/accountRules.ts`, `src/lib/finance/projection.ts`, `test/finance.test.ts` |
 | 2026-08-31 | Etapa 27 — Criar linha do tempo financeira do mês | Concluído | Criada timeline mensal com receitas, despesas, faturas e dívidas ordenadas por data, conta vinculada, status previsto/realizado e navegação para a tela de origem pelo detalhe da Visão Geral. | `src/lib/finance/types.ts`, `src/lib/finance/cashflowTimelineRules.ts`, `src/lib/finance/index.ts`, `src/App.tsx`, `src/pages/VisaoGeralPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 28 — Detectar saldo negativo ao longo do mês | Concluído | Criada análise diária de risco por conta que reconstrói o saldo inicial, aplica receitas e pagamentos em ordem, detecta a primeira data negativa e gera alerta crítico com data, conta e déficit. | `src/lib/finance/types.ts`, `src/lib/finance/cashflowTimelineRules.ts`, `src/lib/finance/projection.ts`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 29 — Criar análise "o que pagar primeiro" | Concluído | Criada recomendação operacional de pagamentos pendentes com ranking por vencimento, conta sugerida, saldo antes/depois, caixa futuro conhecido, nível de risco e explicação sem executar ações automaticamente. | `src/lib/finance/types.ts`, `src/lib/finance/paymentRecommendationRules.ts`, `src/lib/finance/index.ts`, `src/pages/VisaoGeralPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 30 — Sugerir transferências preventivas | Concluído | Criada sugestão preventiva de transferência a partir de risco intramês, escolhendo origem que permanece com saldo não negativo após eventos futuros e exibindo valor, data limite, origem e destino para ação manual. | `src/lib/finance/types.ts`, `src/lib/finance/preventiveTransferRules.ts`, `src/lib/finance/index.ts`, `src/pages/VisaoGeralPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 31 — Reposicionar snapshots como conferência | Concluído | Conciliação de conta passou a exibir preview explícito de saldo real, ledger e diferença, com opção de revisar extrato e confirmação final antes de registrar snapshot e criar ajuste manual. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ContasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 32 — Auditoria completa de fluxo por conta | Concluído | Criado relatório auditável de fluxo financeiro por conta, validando centavo a centavo resultado mensal, saldos explicados pelo ledger, ausência de dupla contagem, Dashboard, Contas e Projeção. | `src/lib/finance/types.ts`, `src/lib/finance/auditRules.ts`, `src/lib/finance/index.ts`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 33 — Preparar integração futura com Objetivos | Concluído | Preparadas funções de ledger para aporte e resgate de objetivos com `relatedEntityType = goal`, preservando neutralidade no fluxo global sem implementar tela, metas, prazos ou rendimento. | `src/lib/finance/accountTransactionRules.ts`, `test/finance.test.ts` |
 
 ---
 

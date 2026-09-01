@@ -14,6 +14,8 @@ import {
   createDebtPaymentTransaction,
   createExpensePaymentReversalTransaction,
   createExpensePaymentTransaction,
+  createGoalContributionTransaction,
+  createGoalWithdrawalTransaction,
   createIncomeReceiptReversalTransaction,
   createIncomeReceiptTransaction,
   createManualAdjustmentTransaction,
@@ -21,6 +23,8 @@ import {
   createTransferReversalTransactions,
   createTransferTransactions,
   getCardCommitmentSummary,
+  getAccountReconciliationPreview,
+  getFinancialFlowAuditReport,
   getAccountTransactions,
   getAccountLedgerBalanceComparisons,
   getAccountLedgerBalanceDifferences,
@@ -36,7 +40,10 @@ import {
   expenseAmountForMonth,
   getAccountBalanceSnapshotForMonth,
   getCardInvoiceForMonth,
+  getAccountNegativeBalanceRisksForMonth,
   getCashflowTimelineForMonth,
+  getPaymentPriorityRecommendations,
+  getPreventiveTransferSuggestions,
   getCardInvoicePaymentForMonth,
   getInvoiceStatus,
   getMonthHealthStatus,
@@ -1729,6 +1736,179 @@ test('linha do tempo financeira do mês ordena entradas e saídas com conta e st
   assert.equal(timeline[3].originPage, 'dividas');
 });
 
+test('risco de saldo negativo detecta primeira data por conta considerando entradas anteriores', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Nubank', name: 'Conta', holder: 'Lucas', balance: -150 },
+  ];
+  data.incomes = [
+    income({ id: 'inc-1', name: 'Freela', defaultAccountId: 'acc-1', dueDay: 5, vigencias: [{ id: 'vig-income', amount: 500, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.incomeReceipts = [{
+    id: 'receipt-1',
+    incomeId: 'inc-1',
+    monthKey: '2026-09',
+    date: '2026-09-05',
+    accountId: 'acc-1',
+    expectedAmount: 500,
+    receivedAmount: 500,
+    transactionId: 'tx-income',
+    createdAt: '2026-09-05T00:00:00.000Z',
+  }];
+  data.expenses = [
+    expense({ id: 'exp-1', description: 'Assinatura', dueDay: 4, vigencias: [{ id: 'vig-expense-1', amount: 50, startDate: '2026-09', endDate: null }] }),
+    expense({ id: 'exp-2', description: 'Energia', dueDay: 10, vigencias: [{ id: 'vig-expense-2', amount: 700, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.expensePayments = [{
+    id: 'payment-1',
+    expenseId: 'exp-1',
+    monthKey: '2026-09',
+    date: '2026-09-04',
+    accountId: 'acc-1',
+    expectedAmount: 50,
+    paidAmount: 50,
+    transactionId: 'tx-expense-1',
+    createdAt: '2026-09-04T00:00:00.000Z',
+  }, {
+    id: 'payment-2',
+    expenseId: 'exp-2',
+    monthKey: '2026-09',
+    date: '2026-09-10',
+    accountId: 'acc-1',
+    expectedAmount: 700,
+    paidAmount: 700,
+    transactionId: 'tx-expense-2',
+    createdAt: '2026-09-10T00:00:00.000Z',
+  }];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [];
+  data.cardInvoicePayments = [];
+  data.debtPayments = [];
+
+  const risks = getAccountNegativeBalanceRisksForMonth(data, '2026-09');
+  const alerts = generateAlerts(data, projectMonths(data, 1, '2026-09'));
+
+  assert.equal(risks.length, 1);
+  assert.equal(risks[0].date, '2026-09-10');
+  assert.equal(risks[0].accountLabel, 'Nubank · Lucas');
+  assert.equal(risks[0].openingBalance, 100);
+  assert.equal(risks[0].balance, -150);
+  assert.equal(risks[0].deficit, 150);
+  assert.equal(risks[0].triggeringItem.label, 'Energia');
+  assert.equal(alerts.some((alert) => alert.type === 'intramonth-negative-balance' && alert.month === '2026-09'), true);
+});
+
+test('recomendação do que pagar primeiro respeita vencimento e caixa futuro sem executar pagamento', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 1000 },
+    { id: 'acc-2', bank: 'Nubank', name: 'Reserva', holder: 'Lucas', balance: 2500 },
+  ];
+  data.incomes = [
+    income({ id: 'inc-1', name: 'Salário', defaultAccountId: 'acc-1', dueDay: 5, vigencias: [{ id: 'vig-income', amount: 2000, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.expenses = [
+    expense({ id: 'exp-1', description: 'Aluguel', dueDay: 6, vigencias: [{ id: 'vig-expense-1', amount: 1200, startDate: '2026-09', endDate: null }] }),
+    expense({ id: 'exp-2', description: 'Energia', dueDay: 10, vigencias: [{ id: 'vig-expense-2', amount: 300, startDate: '2026-09', endDate: null }] }),
+    expense({ id: 'exp-3', description: 'Internet', dueDay: 20, vigencias: [{ id: 'vig-expense-3', amount: 900, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.incomeReceipts = [];
+  data.expensePayments = [{
+    id: 'payment-3',
+    expenseId: 'exp-3',
+    monthKey: '2026-09',
+    date: '2026-09-20',
+    accountId: 'acc-2',
+    expectedAmount: 900,
+    paidAmount: 900,
+    transactionId: 'tx-expense-3',
+    createdAt: '2026-09-20T00:00:00.000Z',
+  }];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [];
+  data.cardInvoicePayments = [];
+  data.debtPayments = [];
+
+  const recommendations = getPaymentPriorityRecommendations(data, '2026-09', 3);
+
+  assert.equal(recommendations.length, 2);
+  assert.equal(recommendations[0].item.label, 'Aluguel');
+  assert.equal(recommendations[0].rank, 1);
+  assert.equal(recommendations[0].accountId, 'acc-1');
+  assert.equal(recommendations[0].balanceBeforePayment, 3000);
+  assert.equal(recommendations[0].balanceAfterPayment, 1800);
+  assert.equal(recommendations[0].reason.includes('vence em 06/09'), true);
+  assert.equal(recommendations[1].item.label, 'Energia');
+  assert.equal(data.expensePayments.some((payment) => payment.expenseId === 'exp-1'), false);
+});
+
+test('sugestão de transferência preventiva considera eventos futuros da origem sem executar transferência', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Nubank', name: 'Conta', holder: 'Lucas', balance: -200 },
+    { id: 'acc-2', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 0 },
+    { id: 'acc-3', bank: 'Santander', name: 'Conta', holder: 'Lucas', balance: 400 },
+  ];
+  data.incomes = [];
+  data.expenses = [
+    expense({ id: 'exp-1', description: 'Energia', dueDay: 10, vigencias: [{ id: 'vig-expense-1', amount: 500, startDate: '2026-09', endDate: null }] }),
+    expense({ id: 'exp-2', description: 'Seguro', dueDay: 20, vigencias: [{ id: 'vig-expense-2', amount: 950, startDate: '2026-09', endDate: null }] }),
+    expense({ id: 'exp-3', description: 'Internet', dueDay: 18, vigencias: [{ id: 'vig-expense-3', amount: 300, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.expensePayments = [{
+    id: 'payment-1',
+    expenseId: 'exp-1',
+    monthKey: '2026-09',
+    date: '2026-09-10',
+    accountId: 'acc-1',
+    expectedAmount: 500,
+    paidAmount: 500,
+    transactionId: 'tx-expense-1',
+    createdAt: '2026-09-10T00:00:00.000Z',
+  }, {
+    id: 'payment-2',
+    expenseId: 'exp-2',
+    monthKey: '2026-09',
+    date: '2026-09-20',
+    accountId: 'acc-2',
+    expectedAmount: 950,
+    paidAmount: 950,
+    transactionId: 'tx-expense-2',
+    createdAt: '2026-09-20T00:00:00.000Z',
+  }, {
+    id: 'payment-3',
+    expenseId: 'exp-3',
+    monthKey: '2026-09',
+    date: '2026-09-18',
+    accountId: 'acc-3',
+    expectedAmount: 300,
+    paidAmount: 300,
+    transactionId: 'tx-expense-3',
+    createdAt: '2026-09-18T00:00:00.000Z',
+  }];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [];
+  data.incomeReceipts = [];
+  data.cardInvoicePayments = [];
+  data.debtPayments = [];
+  data.accountTransactions = [];
+
+  const suggestions = getPreventiveTransferSuggestions(data, '2026-09');
+
+  assert.equal(suggestions.length, 1);
+  assert.equal(suggestions[0].fromAccountId, 'acc-3');
+  assert.equal(suggestions[0].toAccountId, 'acc-1');
+  assert.equal(suggestions[0].amount, 200);
+  assert.equal(suggestions[0].suggestedDate, '2026-09-09');
+  assert.equal(suggestions[0].destinationDeficitDate, '2026-09-10');
+  assert.equal(suggestions[0].originLowestBalanceAfterTransfer, 200);
+  assert.equal(suggestions[0].reason.includes('mantém menor saldo previsto'), true);
+  assert.equal(data.accountTransactions?.length ?? 0, 0);
+});
+
 test('estorno de transferência cria duas reversões e restaura saldos', () => {
   const data = baseData();
   data.bankAccounts = [
@@ -1948,6 +2128,240 @@ test('ajuste manual de conciliação cria movimentação válida sem entrar no f
   assert.equal(summary.balance, 4900);
   assert.equal(createManualAdjustmentTransaction('acc-1', Number.NaN, '2026-08-31'), null);
   assert.equal(createManualAdjustmentTransaction('acc-1', 0, '2026-08-31'), null);
+});
+
+test('movimentações futuras de objetivos afetam ledger sem virar receita ou despesa global', () => {
+  const data = baseData();
+  const contribution = createGoalContributionTransaction('goal-1', 'acc-1', 1000.129, '2026-09-10', 'Reserva');
+  const withdrawal = createGoalWithdrawalTransaction('goal-1', 'acc-1', 500, '2026-09-20', 'Resgate parcial');
+  assert.ok(contribution);
+  assert.ok(withdrawal);
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: -500.13 },
+  ];
+  data.accountTransactions = [contribution, withdrawal];
+  data.incomes = [income({ vigencias: [{ id: 'vig-income', amount: 5000, startDate: '2026-09', endDate: null }] })];
+  data.expenses = [expense({ vigencias: [{ id: 'vig-expense', amount: 100, startDate: '2026-09', endDate: null }] })];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [];
+
+  const summary = getMonthlyFinancialSummary(data, '2026-09');
+
+  assert.equal(contribution.kind, 'goal_contribution');
+  assert.equal(contribution.relatedEntityType, 'goal');
+  assert.equal(contribution.relatedEntityId, 'goal-1');
+  assert.equal(contribution.amount, -1000.13);
+  assert.equal(withdrawal.kind, 'goal_withdrawal');
+  assert.equal(withdrawal.relatedEntityType, 'goal');
+  assert.equal(withdrawal.amount, 500);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), -500.13);
+  assert.equal(summary.income, 5000);
+  assert.equal(summary.totalExpenses, 100);
+  assert.equal(summary.balance, 4900);
+  assert.equal(createGoalContributionTransaction('', 'acc-1', 100, '2026-09-10'), null);
+  assert.equal(createGoalContributionTransaction('goal-1', '', 100, '2026-09-10'), null);
+  assert.equal(createGoalContributionTransaction('goal-1', 'acc-1', 0, '2026-09-10'), null);
+  assert.equal(createGoalWithdrawalTransaction('goal-1', 'acc-1', Number.NaN, '2026-09-10'), null);
+  assert.equal(createGoalWithdrawalTransaction('goal-1', 'acc-1', 100, '2026-09'), null);
+});
+
+test('preview de conciliação explicita diferença antes de criar ajuste', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 5240 },
+  ];
+  data.accountTransactions = [
+    {
+      id: 'tx-initial',
+      accountId: 'acc-1',
+      date: '2026-08-01',
+      monthKey: '2026-08',
+      amount: 5000,
+      kind: 'initial_balance',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+    {
+      id: 'tx-payment',
+      accountId: 'acc-1',
+      date: '2026-08-10',
+      monthKey: '2026-08',
+      amount: -100,
+      kind: 'expense_payment',
+      createdAt: '2026-08-10T00:00:00.000Z',
+    },
+  ];
+
+  const preview = getAccountReconciliationPreview(data, 'acc-1', 5240, '2026-08-31');
+
+  assert.deepEqual(preview, {
+    accountId: 'acc-1',
+    date: '2026-08-31',
+    monthKey: '2026-08',
+    realBalance: 5240,
+    ledgerBalance: 4900,
+    difference: 340,
+    needsAdjustment: true,
+  });
+  assert.equal(getAccountReconciliationPreview(data, 'missing', 5240, '2026-08-31'), null);
+  assert.equal(getAccountReconciliationPreview(data, 'acc-1', Number.NaN, '2026-08-31'), null);
+  assert.equal(getAccountReconciliationPreview(data, 'acc-1', 5240, '2026-08'), null);
+});
+
+test('auditoria completa explica resultado mensal e saldos por conta centavo a centavo', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 12000 },
+    { id: 'acc-2', bank: 'Nubank', name: 'Conta', holder: 'Lucas', balance: 2700 },
+  ];
+  data.incomes = [
+    income({ id: 'salary-audit', name: 'Salário', defaultAccountId: 'acc-1', dueDay: 5, vigencias: [{ id: 'vig-salary-audit', amount: 10000, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.expenses = [
+    expense({ id: 'rent-audit', description: 'Aluguel', dueDay: 6, vigencias: [{ id: 'vig-rent-audit', amount: 2000, startDate: '2026-09', endDate: null }] }),
+    expense({ id: 'energy-audit', description: 'Energia', dueDay: 8, vigencias: [{ id: 'vig-energy-audit', amount: 300, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [];
+  data.incomeReceipts = [{
+    id: 'receipt-audit',
+    incomeId: 'salary-audit',
+    monthKey: '2026-09',
+    date: '2026-09-05',
+    accountId: 'acc-1',
+    expectedAmount: 10000,
+    receivedAmount: 10000,
+    transactionId: 'tx-salary-audit',
+    createdAt: '2026-09-05T00:00:00.000Z',
+  }];
+  data.expensePayments = [{
+    id: 'payment-rent-audit',
+    expenseId: 'rent-audit',
+    monthKey: '2026-09',
+    date: '2026-09-06',
+    accountId: 'acc-1',
+    expectedAmount: 2000,
+    paidAmount: 2000,
+    transactionId: 'tx-rent-audit',
+    createdAt: '2026-09-06T00:00:00.000Z',
+  }, {
+    id: 'payment-energy-audit',
+    expenseId: 'energy-audit',
+    monthKey: '2026-09',
+    date: '2026-09-08',
+    accountId: 'acc-2',
+    expectedAmount: 300,
+    paidAmount: 300,
+    transactionId: 'tx-energy-audit',
+    createdAt: '2026-09-08T00:00:00.000Z',
+  }];
+  data.cardInvoicePayments = [];
+  data.debtPayments = [];
+  data.accountTransactions = [
+    {
+      id: 'initial-acc-1-audit',
+      accountId: 'acc-1',
+      date: '2026-09-01',
+      monthKey: '2026-09',
+      amount: 5000,
+      kind: 'initial_balance',
+      createdAt: '2026-09-01T00:00:00.000Z',
+    },
+    {
+      id: 'initial-acc-2-audit',
+      accountId: 'acc-2',
+      date: '2026-09-01',
+      monthKey: '2026-09',
+      amount: 2000,
+      kind: 'initial_balance',
+      createdAt: '2026-09-01T00:00:00.000Z',
+    },
+    {
+      id: 'tx-salary-audit',
+      accountId: 'acc-1',
+      date: '2026-09-05',
+      monthKey: '2026-09',
+      amount: 10000,
+      kind: 'income_receipt',
+      relatedEntityType: 'income',
+      relatedEntityId: 'salary-audit',
+      relatedMonthKey: '2026-09',
+      createdAt: '2026-09-05T00:00:00.000Z',
+    },
+    {
+      id: 'tx-rent-audit',
+      accountId: 'acc-1',
+      date: '2026-09-06',
+      monthKey: '2026-09',
+      amount: -2000,
+      kind: 'expense_payment',
+      relatedEntityType: 'expense',
+      relatedEntityId: 'rent-audit',
+      relatedMonthKey: '2026-09',
+      createdAt: '2026-09-06T00:00:00.000Z',
+    },
+    {
+      id: 'tx-energy-audit',
+      accountId: 'acc-2',
+      date: '2026-09-08',
+      monthKey: '2026-09',
+      amount: -300,
+      kind: 'expense_payment',
+      relatedEntityType: 'expense',
+      relatedEntityId: 'energy-audit',
+      relatedMonthKey: '2026-09',
+      createdAt: '2026-09-08T00:00:00.000Z',
+    },
+    {
+      id: 'tx-transfer-out-audit',
+      accountId: 'acc-1',
+      date: '2026-09-12',
+      monthKey: '2026-09',
+      amount: -1000,
+      kind: 'transfer_out',
+      relatedEntityType: 'transfer',
+      relatedEntityId: 'transfer-audit',
+      createdAt: '2026-09-12T00:00:00.000Z',
+    },
+    {
+      id: 'tx-transfer-in-audit',
+      accountId: 'acc-2',
+      date: '2026-09-12',
+      monthKey: '2026-09',
+      amount: 1000,
+      kind: 'transfer_in',
+      relatedEntityType: 'transfer',
+      relatedEntityId: 'transfer-audit',
+      createdAt: '2026-09-12T00:00:00.000Z',
+    },
+  ];
+
+  const audit = getFinancialFlowAuditReport(data, '2026-09');
+  const byAccount = Object.fromEntries(audit.accountBalances.map((account) => [account.accountId, account]));
+
+  assert.equal(audit.income, 10000);
+  assert.equal(audit.totalExpenses, 2300);
+  assert.equal(audit.result, 7700);
+  assert.equal(byAccount['acc-1'].openingBalance, 5000);
+  assert.equal(byAccount['acc-1'].inflows, 10000);
+  assert.equal(byAccount['acc-1'].outflows, 2000);
+  assert.equal(byAccount['acc-1'].transfersOut, 1000);
+  assert.equal(byAccount['acc-1'].closingBalance, 12000);
+  assert.equal(byAccount['acc-2'].openingBalance, 2000);
+  assert.equal(byAccount['acc-2'].outflows, 300);
+  assert.equal(byAccount['acc-2'].transfersIn, 1000);
+  assert.equal(byAccount['acc-2'].closingBalance, 2700);
+  assert.equal(audit.availableBalance, 14700);
+  assert.equal(audit.ledgerBalance, 14700);
+  assert.equal(audit.storedAccountsBalance, 14700);
+  assert.equal(audit.projectedAccountsBalance, 14700);
+  assert.deepEqual(audit.checks, {
+    noDoubleCounting: true,
+    ledgerExplainsStoredBalances: true,
+    dashboardMatchesAccounts: true,
+    projectionMatchesAccounts: true,
+  });
 });
 
 test('auditoria controlada mantém Dashboard, Planejamento, Cartões, Projeção, Contas, Alertas e Indicadores coerentes', () => {

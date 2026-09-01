@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { ArrowUpRight, CalendarDays, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, ArrowUpRight, CalendarDays, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { getCashflowTimelineForMonth, getMonthlyComparisonSummary, projectMonths } from '@/lib/projection';
+import { getCashflowTimelineForMonth, getMonthlyComparisonSummary, getPaymentPriorityRecommendations, getPreventiveTransferSuggestions, projectMonths } from '@/lib/projection';
 import { formatCurrency, formatDateBR, formatPercent, monthLabelShort, formatMonthBR } from '@/lib/format';
 import { Badge, Card, Modal } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
@@ -37,6 +37,14 @@ export function VisaoGeralPage({ onNavigate }: { onNavigate: (page: PageId) => v
   const selectedData = months.find((m) => m.monthKey === detailMonth);
   const selectedTimeline = useMemo(
     () => (detailMonth ? getCashflowTimelineForMonth(data, detailMonth) : []),
+    [data, detailMonth],
+  );
+  const selectedPaymentRecommendations = useMemo(
+    () => (detailMonth ? getPaymentPriorityRecommendations(data, detailMonth, 4) : []),
+    [data, detailMonth],
+  );
+  const selectedTransferSuggestions = useMemo(
+    () => (detailMonth ? getPreventiveTransferSuggestions(data, detailMonth, 3) : []),
     [data, detailMonth],
   );
 
@@ -159,6 +167,80 @@ export function VisaoGeralPage({ onNavigate }: { onNavigate: (page: PageId) => v
               <DetailBox label="Total Despesas" value={formatCurrency(selectedData.totalExpenses)} color="gray" />
               <DetailBox label="Saldo do Mês" value={formatCurrency(selectedData.balance)} color={selectedData.balance >= 0 ? 'green' : 'red'} />
               <DetailBox label="Saldo Acumulado" value={formatCurrency(selectedData.accumulatedBalance)} color={selectedData.accumulatedBalance >= 0 ? 'green' : 'red'} />
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <ArrowRightLeft size={16} className="text-blue-500" />
+                <h4 className="text-sm font-semibold text-gray-700">Transferências preventivas</h4>
+              </div>
+              <div className="space-y-1.5">
+                {selectedTransferSuggestions.length === 0 ? (
+                  <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-400">Nenhuma transferência preventiva sugerida para este mês.</p>
+                ) : (
+                  selectedTransferSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onClick={() => {
+                        setDetailMonth(null);
+                        onNavigate('contas');
+                      }}
+                      className="flex w-full items-start justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/70 p-3 text-left transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-gray-800">
+                          {suggestion.fromAccountLabel} → {suggestion.toAccountLabel}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-xs text-gray-500">{suggestion.reason}</p>
+                        <p className="mt-1 text-xs text-gray-400">Transferir até {formatDateBR(suggestion.suggestedDate).slice(0, 5)}</p>
+                      </div>
+                      <div className="flex flex-shrink-0 items-center gap-2">
+                        <Badge color="blue">Sugestão</Badge>
+                        <span className="min-w-[92px] text-right text-sm font-bold text-blue-700">{formatCurrency(suggestion.amount)}</span>
+                        <ArrowUpRight size={15} className="text-blue-400" />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-500" />
+                <h4 className="text-sm font-semibold text-gray-700">O que pagar primeiro</h4>
+              </div>
+              <div className="space-y-1.5">
+                {selectedPaymentRecommendations.length === 0 ? (
+                  <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-400">Nenhuma pendência prevista para priorizar neste mês.</p>
+                ) : (
+                  selectedPaymentRecommendations.map((recommendation) => (
+                    <button
+                      key={recommendation.id}
+                      type="button"
+                      onClick={() => openTimelineOrigin(recommendation.item)}
+                      className="flex w-full items-start justify-between gap-3 rounded-lg border border-amber-100 bg-amber-50/70 p-3 text-left transition-colors hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-amber-200 text-xs font-bold text-amber-800">{recommendation.rank}</span>
+                          <p className="truncate text-sm font-semibold text-gray-800">{recommendation.item.label}</p>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs text-gray-500">{recommendation.reason}</p>
+                        <p className="mt-1 truncate text-xs text-gray-400">{recommendation.accountLabel}</p>
+                      </div>
+                      <div className="flex flex-shrink-0 items-center gap-2">
+                        <Badge color={recommendation.riskLevel === 'alto' ? 'red' : recommendation.riskLevel === 'medio' ? 'yellow' : 'green'}>
+                          {recommendation.riskLevel === 'alto' ? 'Alto' : recommendation.riskLevel === 'medio' ? 'Médio' : 'Baixo'}
+                        </Badge>
+                        <span className="min-w-[92px] text-right text-sm font-bold text-rose-600">{formatCurrency(-recommendation.amount)}</span>
+                        <ArrowUpRight size={15} className="text-amber-400" />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
 
             <div>

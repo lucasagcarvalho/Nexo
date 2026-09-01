@@ -4,7 +4,7 @@ import { debtPaymentForMonth } from './debtRules';
 import { expenseAmountForMonth } from './expenseRules';
 import { incomeAmountForMonth } from './incomeRules';
 import { formatBankAccountLabel } from './accountRules';
-import type { CashflowTimelineItem } from './types';
+import type { AccountNegativeBalanceRisk, CashflowTimelineItem } from './types';
 
 const ACCOUNT_NOT_DEFINED = 'Conta a definir';
 
@@ -128,4 +128,67 @@ export function getCashflowTimelineForMonth(data: AppData, monthKey: string): Ca
     || a.label.localeCompare(b.label)
     || a.id.localeCompare(b.id)
   ));
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function getAccountNegativeBalanceRisksForMonth(data: AppData, monthKey: string): AccountNegativeBalanceRisk[] {
+  const timeline = getCashflowTimelineForMonth(data, monthKey)
+    .filter((item) => item.accountId)
+    .sort((a, b) => (
+      a.date.localeCompare(b.date)
+      || b.amount - a.amount
+      || a.label.localeCompare(b.label)
+      || a.id.localeCompare(b.id)
+    ));
+  const realizedTimelineByAccount = new Map<string, number>();
+
+  for (const item of timeline) {
+    if (!item.accountId || item.status !== 'realizado') continue;
+    realizedTimelineByAccount.set(
+      item.accountId,
+      roundMoney((realizedTimelineByAccount.get(item.accountId) ?? 0) + item.amount),
+    );
+  }
+
+  const accountBalances = new Map(data.bankAccounts.map((account) => {
+    const realizedTimeline = realizedTimelineByAccount.get(account.id) ?? 0;
+    const openingBalance = roundMoney((Number.isFinite(account.balance) ? account.balance : 0) - realizedTimeline);
+    return [account.id, openingBalance];
+  }));
+  const openingBalances = new Map(accountBalances);
+  const risks: AccountNegativeBalanceRisk[] = [];
+  const accountsWithRisk = new Set<string>();
+
+  for (const item of timeline) {
+    if (!item.accountId || accountsWithRisk.has(item.accountId)) continue;
+    const nextBalance = roundMoney((accountBalances.get(item.accountId) ?? 0) + item.amount);
+    accountBalances.set(item.accountId, nextBalance);
+    if (nextBalance < 0) {
+      risks.push({
+        accountId: item.accountId,
+        accountLabel: item.accountLabel,
+        monthKey,
+        date: item.date,
+        day: item.day,
+        openingBalance: openingBalances.get(item.accountId) ?? 0,
+        balance: nextBalance,
+        deficit: Math.abs(nextBalance),
+        triggeringItem: item,
+      });
+      accountsWithRisk.add(item.accountId);
+    }
+  }
+
+  return risks.sort((a, b) => (
+    a.date.localeCompare(b.date)
+    || b.deficit - a.deficit
+    || a.accountLabel.localeCompare(b.accountLabel)
+  ));
+}
+
+export function getFirstAccountNegativeBalanceRiskForMonth(data: AppData, monthKey: string): AccountNegativeBalanceRisk | null {
+  return getAccountNegativeBalanceRisksForMonth(data, monthKey)[0] ?? null;
 }

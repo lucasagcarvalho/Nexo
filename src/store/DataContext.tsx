@@ -5,7 +5,7 @@ import { defaultCategoryClass } from '@/lib/seed';
 import { uid, currentMonthKey, addMonths, compareMonths } from '@/lib/format';
 import { getActiveVigencia as getFinanceActiveVigencia, invoiceStatusKey, isExpensePaidForMonth as getFinanceExpensePaidForMonth } from '@/lib/projection';
 import { formatBankAccountLabel } from '@/lib/finance/accountRules';
-import { calculateAccountLedgerBalance, createCardInvoicePaymentReversalTransaction, createCardInvoicePaymentTransaction, createDebtPaymentReversalTransaction, createDebtPaymentTransaction, createExpensePaymentReversalTransaction, createExpensePaymentTransaction, createIncomeReceiptReversalTransaction, createIncomeReceiptTransaction, createManualAdjustmentTransaction, createTransferReversalTransactions, createTransferTransactions, getCardInvoicePaymentForMonth, getDebtPaymentForMonth, getExpensePaymentForMonth, getIncomeReceiptForMonth, getTransferTransactions } from '@/lib/finance/accountTransactionRules';
+import { createCardInvoicePaymentReversalTransaction, createCardInvoicePaymentTransaction, createDebtPaymentReversalTransaction, createDebtPaymentTransaction, createExpensePaymentReversalTransaction, createExpensePaymentTransaction, createIncomeReceiptReversalTransaction, createIncomeReceiptTransaction, createManualAdjustmentTransaction, createTransferReversalTransactions, createTransferTransactions, getAccountReconciliationPreview, getCardInvoicePaymentForMonth, getDebtPaymentForMonth, getExpensePaymentForMonth, getIncomeReceiptForMonth, getTransferTransactions } from '@/lib/finance/accountTransactionRules';
 import { useAuth } from '@/store/AuthContext';
 
 interface DataContextValue {
@@ -844,15 +844,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const account = prev.bankAccounts.find((item) => item.id === accountId);
       if (!account) return prev;
       accountName = formatBankAccountLabel(account);
-      const ledgerBalance = calculateAccountLedgerBalance(prev, accountId, date);
-      adjustmentAmount = Math.round((realBalance - ledgerBalance) * 100) / 100;
-      const monthKey = date.slice(0, 7);
+      const preview = getAccountReconciliationPreview(prev, accountId, realBalance, date);
+      if (!preview) return prev;
+      adjustmentAmount = preview.difference;
       const snapshot: BankBalanceSnapshot = {
         id: uid(),
         accountId,
         balance: realBalance,
         date,
-        monthKey,
+        monthKey: preview.monthKey,
       };
       const adjustment: AccountTransaction | null = createManualAdjustmentTransaction(
         accountId,
