@@ -1,5 +1,54 @@
 import type { DebtStatus } from '../types';
 
+export interface AccountMonthProjection {
+  accountId: string;
+  accountLabel: string;
+  monthKey: string;
+  openingBalance: number;
+  income: number;
+  expensePayments: number;
+  cardInvoicePayments: number;
+  debtPayments: number;
+  transferIn: number;
+  transferOut: number;
+  closingBalance: number;
+}
+
+export interface AccountsMonthProjection {
+  monthKey: string;
+  accounts: AccountMonthProjection[];
+  openingBalance: number;
+  income: number;
+  expensePayments: number;
+  cardInvoicePayments: number;
+  debtPayments: number;
+  transferIn: number;
+  transferOut: number;
+  netCashflow: number;
+  closingBalance: number;
+}
+
+export type CashflowTimelineStatus = 'previsto' | 'realizado';
+
+export type CashflowTimelineSourceType = 'income' | 'expense' | 'cardInvoice' | 'debt';
+
+export type CashflowTimelineOriginPage = 'receitas' | 'gastos' | 'cartoes' | 'dividas';
+
+export interface CashflowTimelineItem {
+  id: string;
+  date: string;
+  day: number;
+  monthKey: string;
+  label: string;
+  amount: number;
+  accountId: string | null;
+  accountLabel: string;
+  status: CashflowTimelineStatus;
+  sourceType: CashflowTimelineSourceType;
+  sourceId: string;
+  originPage: CashflowTimelineOriginPage;
+}
+
 export interface MonthProjection {
   monthKey: string;
   income: number;
@@ -31,6 +80,10 @@ export interface MonthProjection {
   bankBalance: number;
   accountsBalance: number;
   projectedAccountsBalance: number;
+  accountCashflow: AccountMonthProjection[];
+  openingAccountsBalance: number;
+  closingAccountsBalance: number;
+  availableAccountsBalance: number;
 }
 
 export interface ProjectionResult {

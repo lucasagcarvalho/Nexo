@@ -1,7 +1,7 @@
 import type { AppData, CardPurchase } from '../types';
 import { addMonths, currentMonthKey, generateMonthKeys, monthLabelShort, compareMonths, formatCurrency } from '../format';
 import { getMonthlyFinancialSummary } from './monthlySummary';
-import { projectAccountBalance, totalBankBalance } from './accountRules';
+import { projectAccountBalance, projectAccountsByMonth, totalBankBalance } from './accountRules';
 import { getCardMonthlyLimit, purchaseInstallmentForMonth } from './cardRules';
 import { getExceededCategoryBudgets } from './categoryBudgetRules';
 import { debtPaymentForMonth } from './debtRules';
@@ -11,6 +11,7 @@ import type { CategoryTrend, FinancialAlert, FinancialAlertSeverity, FinancialHe
 export function projectMonths(data: AppData, count = 360, startMonth?: string): ProjectionResult {
   const start = startMonth ?? currentMonthKey();
   const monthKeys = generateMonthKeys(start, count);
+  const accountMonthProjections = projectAccountsByMonth(data, start, count);
   const months: MonthProjection[] = [];
   let accumulated = 0;
   let previousProjectedAccountsBalance: number | undefined;
@@ -25,8 +26,9 @@ export function projectMonths(data: AppData, count = 360, startMonth?: string): 
     }
   }
 
-  for (const monthKey of monthKeys) {
+  for (const [index, monthKey] of monthKeys.entries()) {
     const financials = getMonthlyFinancialSummary(data, monthKey);
+    const accountMonthProjection = accountMonthProjections[index];
 
     let carryToNext = 0;
     if (financials.balance > 0) {
@@ -45,6 +47,10 @@ export function projectMonths(data: AppData, count = 360, startMonth?: string): 
       bankBalance: accountProjection.projectedAccountsBalance,
       accountsBalance: accountProjection.accountsBalance,
       projectedAccountsBalance: accountProjection.projectedAccountsBalance,
+      accountCashflow: accountMonthProjection?.accounts ?? [],
+      openingAccountsBalance: accountMonthProjection?.openingBalance ?? accountProjection.accountsBalance,
+      closingAccountsBalance: accountMonthProjection?.closingBalance ?? accountProjection.projectedAccountsBalance,
+      availableAccountsBalance: accountProjection.accountsBalance,
     });
   }
 

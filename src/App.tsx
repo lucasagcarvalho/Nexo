@@ -121,7 +121,7 @@ function AppContent() {
           onThemeModeChange={setThemeMode}
         >
           {page === 'dashboard' && <DashboardPage onNavigate={navigate} />}
-          {page === 'visao-geral' && <VisaoGeralPage />}
+          {page === 'visao-geral' && <VisaoGeralPage onNavigate={navigate} />}
           {page === 'receitas' && <ReceitasPage />}
           {page === 'gastos' && <GastosPage />}
           {page === 'cartoes' && <CartoesPage />}

@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowUpRight, CalendarDays, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
-import { getMonthlyComparisonSummary, projectMonths } from '@/lib/projection';
-import { formatCurrency, formatPercent, monthLabelShort, formatMonthBR } from '@/lib/format';
+import { getCashflowTimelineForMonth, getMonthlyComparisonSummary, projectMonths } from '@/lib/projection';
+import { formatCurrency, formatDateBR, formatPercent, monthLabelShort, formatMonthBR } from '@/lib/format';
 import { Badge, Card, Modal } from '@/components/ui';
+import type { PageId } from '@/components/Layout';
+import type { CashflowTimelineItem } from '@/lib/projection';
 import type { MonthlyComparisonMetric } from '@/lib/projection';
 
 type MonthStatus = 'saudavel' | 'atencao' | 'critico';
@@ -22,7 +24,7 @@ const statusConfig: Record<MonthStatus, { label: string; color: 'green' | 'yello
   critico: { label: 'Crítico', color: 'red', dotClass: 'bg-rose-500' },
 };
 
-export function VisaoGeralPage() {
+export function VisaoGeralPage({ onNavigate }: { onNavigate: (page: PageId) => void }) {
   const { data } = useData();
   const { selectedMonth } = useMonth();
   const [range, setRange] = useState<6 | 12 | 24>(12);
@@ -33,6 +35,15 @@ export function VisaoGeralPage() {
   const months = projection.months.slice(0, range);
 
   const selectedData = months.find((m) => m.monthKey === detailMonth);
+  const selectedTimeline = useMemo(
+    () => (detailMonth ? getCashflowTimelineForMonth(data, detailMonth) : []),
+    [data, detailMonth],
+  );
+
+  const openTimelineOrigin = (item: CashflowTimelineItem) => {
+    setDetailMonth(null);
+    onNavigate(item.originPage);
+  };
 
   return (
     <div className="space-y-6">
@@ -136,7 +147,7 @@ export function VisaoGeralPage() {
         </div>
       </Card>
 
-      <Modal open={!!detailMonth} onClose={() => setDetailMonth(null)} title={selectedData ? `Detalhes · ${monthLabelShort(selectedData.monthKey)}` : ''}>
+      <Modal open={!!detailMonth} onClose={() => setDetailMonth(null)} title={selectedData ? `Detalhes · ${monthLabelShort(selectedData.monthKey)}` : ''} size="lg">
         {selectedData && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -148,6 +159,42 @@ export function VisaoGeralPage() {
               <DetailBox label="Total Despesas" value={formatCurrency(selectedData.totalExpenses)} color="gray" />
               <DetailBox label="Saldo do Mês" value={formatCurrency(selectedData.balance)} color={selectedData.balance >= 0 ? 'green' : 'red'} />
               <DetailBox label="Saldo Acumulado" value={formatCurrency(selectedData.accumulatedBalance)} color={selectedData.accumulatedBalance >= 0 ? 'green' : 'red'} />
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <CalendarDays size={16} className="text-blue-500" />
+                <h4 className="text-sm font-semibold text-gray-700">Linha do tempo financeira</h4>
+              </div>
+              <div className="space-y-1.5">
+                {selectedTimeline.length === 0 ? (
+                  <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-400">Nenhum movimento previsto ou realizado neste mês.</p>
+                ) : (
+                  selectedTimeline.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => openTimelineOrigin(item)}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-left transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="w-16 flex-shrink-0 text-xs font-bold text-gray-500">{formatDateBR(item.date).slice(0, 5)}</span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-800">{item.label}</p>
+                          <p className="truncate text-xs text-gray-400">{item.accountLabel}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-shrink-0 items-center gap-2">
+                        <Badge color={item.status === 'realizado' ? 'green' : 'yellow'}>{item.status === 'realizado' ? 'Realizado' : 'Previsto'}</Badge>
+                        <span className={`min-w-[92px] text-right text-sm font-bold ${item.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {formatCurrency(item.amount)}
+                        </span>
+                        <ArrowUpRight size={15} className="text-gray-300" />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
 
             {Object.keys(selectedData.categoryBreakdown).length > 0 && (

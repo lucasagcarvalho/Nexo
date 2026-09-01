@@ -36,6 +36,7 @@ import {
   expenseAmountForMonth,
   getAccountBalanceSnapshotForMonth,
   getCardInvoiceForMonth,
+  getCashflowTimelineForMonth,
   getCardInvoicePaymentForMonth,
   getInvoiceStatus,
   getMonthHealthStatus,
@@ -58,6 +59,7 @@ import {
   isInvoicePaid,
   isTransactionReversed,
   projectAccountBalance,
+  projectAccountsByMonth,
   projectMonths,
   purchaseInstallmentStatus,
   sumTransactionsForAccount,
@@ -1531,6 +1533,200 @@ test('transferência entre contas rejeita origem igual, valor inválido e data i
   assert.equal(createTransferTransactions('acc-1', 'acc-2', 0, '2026-09-20'), null);
   assert.equal(createTransferTransactions('acc-1', 'acc-2', Number.NaN, '2026-09-20'), null);
   assert.equal(createTransferTransactions('acc-1', 'acc-2', 100, '2026-09'), null);
+});
+
+test('resultado do mês e saldo disponível são conceitos separados', () => {
+  const data = baseData();
+  const receiptTransaction = createIncomeReceiptTransaction('inc-1', 'acc-1', 5000, '2026-09-05', '2026-09');
+  const transferTransactions = createTransferTransactions('acc-1', 'acc-2', 1000, '2026-09-10');
+  assert.ok(receiptTransaction);
+  assert.ok(transferTransactions);
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 7000 },
+    { id: 'acc-2', bank: 'Nubank', name: 'Reserva', holder: 'Lucas', balance: 1500 },
+  ];
+  data.incomes = [income({ id: 'inc-1', vigencias: [{ id: 'vig-income', amount: 5000, startDate: '2026-09', endDate: null }] })];
+  data.expenses = [expense({ vigencias: [{ id: 'vig-expense', amount: 2300, startDate: '2026-09', endDate: null }] })];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [];
+  data.accountTransactions = [receiptTransaction, ...transferTransactions];
+
+  const summary = getMonthlyFinancialSummary(data, '2026-09');
+  const projection = projectMonths(data, 1, '2026-09').months[0];
+  const availableBalance = data.bankAccounts.reduce((sum, account) => sum + account.balance, 0);
+
+  assert.equal(summary.income, 5000);
+  assert.equal(summary.totalExpenses, 2300);
+  assert.equal(summary.balance, 2700);
+  assert.equal(availableBalance, 8500);
+  assert.equal(projection.accountsBalance, 8500);
+  assert.equal(calculateTotalLedgerBalance(data), 5000);
+});
+
+test('projeção mensal por conta encadeia saldo e anula transferências no agregado', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 3000 },
+    { id: 'acc-2', bank: 'Nubank', name: 'Reserva', holder: 'Lucas', balance: 500 },
+  ];
+  data.incomes = [
+    income({ id: 'inc-1', defaultAccountId: 'acc-1', vigencias: [{ id: 'vig-income', amount: 10000, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.expensePayments = [{
+    id: 'payment-1',
+    expenseId: 'exp-1',
+    monthKey: '2026-09',
+    date: '2026-09-06',
+    accountId: 'acc-1',
+    expectedAmount: 2000,
+    paidAmount: 2000,
+    transactionId: 'tx-expense',
+    createdAt: '2026-09-06T00:00:00.000Z',
+  }];
+  data.cardInvoicePayments = [{
+    id: 'card-payment-1',
+    cardId: 'card-1',
+    monthKey: '2026-09',
+    date: '2026-09-10',
+    accountId: 'acc-1',
+    amount: 1500,
+    transactionId: 'tx-card',
+    createdAt: '2026-09-10T00:00:00.000Z',
+  }];
+  data.debtPayments = [{
+    id: 'debt-payment-1',
+    debtId: 'debt-1',
+    monthKey: '2026-09',
+    date: '2026-09-15',
+    accountId: 'acc-2',
+    expectedAmount: 700,
+    paidAmount: 700,
+    transactionId: 'tx-debt',
+    createdAt: '2026-09-15T00:00:00.000Z',
+  }];
+  const transferTransactions = createTransferTransactions('acc-1', 'acc-2', 1000, '2026-09-20');
+  assert.ok(transferTransactions);
+  data.accountTransactions = transferTransactions;
+
+  const projection = projectAccountsByMonth(data, '2026-09', 2);
+  const september = projection[0];
+  const october = projection[1];
+  const septemberByAccount = Object.fromEntries(september.accounts.map((account) => [account.accountId, account]));
+
+  assert.equal(septemberByAccount['acc-1'].openingBalance, 3000);
+  assert.equal(septemberByAccount['acc-1'].income, 10000);
+  assert.equal(septemberByAccount['acc-1'].expensePayments, 2000);
+  assert.equal(septemberByAccount['acc-1'].cardInvoicePayments, 1500);
+  assert.equal(septemberByAccount['acc-1'].transferOut, 1000);
+  assert.equal(septemberByAccount['acc-1'].closingBalance, 8500);
+  assert.equal(septemberByAccount['acc-2'].openingBalance, 500);
+  assert.equal(septemberByAccount['acc-2'].debtPayments, 700);
+  assert.equal(septemberByAccount['acc-2'].transferIn, 1000);
+  assert.equal(septemberByAccount['acc-2'].closingBalance, 800);
+  assert.equal(september.openingBalance, 3500);
+  assert.equal(september.transferIn, september.transferOut);
+  assert.equal(september.closingBalance, september.accounts.reduce((sum, account) => sum + account.closingBalance, 0));
+  assert.equal(september.netCashflow, 5800);
+  assert.equal(october.accounts.find((account) => account.accountId === 'acc-1')?.openingBalance, 8500);
+  assert.equal(october.accounts.find((account) => account.accountId === 'acc-2')?.openingBalance, 800);
+});
+
+test('projectMonths preserva campos antigos e adiciona cashflow centralizado por conta', () => {
+  const data = baseData();
+  const monthKey = addMonths(currentMonthKey(), 1);
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 3000 },
+    { id: 'acc-2', bank: 'Nubank', name: 'Reserva', holder: 'Lucas', balance: 500 },
+  ];
+  data.incomes = [
+    income({ id: 'inc-1', defaultAccountId: 'acc-1', vigencias: [{ id: 'vig-income', amount: 10000, startDate: monthKey, endDate: null }] }),
+  ];
+  data.expenses = [];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [];
+  data.expensePayments = [{
+    id: 'payment-1',
+    expenseId: 'exp-1',
+    monthKey,
+    date: `${monthKey}-06`,
+    accountId: 'acc-1',
+    expectedAmount: 1000,
+    paidAmount: 1000,
+    transactionId: 'tx-expense',
+    createdAt: `${monthKey}-06T00:00:00.000Z`,
+  }];
+  data.cardInvoicePayments = [];
+  data.debtPayments = [];
+  data.accountTransactions = [];
+
+  const projection = projectMonths(data, 2, monthKey).months;
+  const firstMonth = projection[0];
+
+  assert.equal(firstMonth.income, 10000);
+  assert.equal(firstMonth.totalExpenses, 0);
+  assert.equal(firstMonth.balance, 10000);
+  assert.equal(firstMonth.accountsBalance, 3500);
+  assert.equal(firstMonth.projectedAccountsBalance, 13500);
+  assert.equal(firstMonth.availableAccountsBalance, 3500);
+  assert.equal(firstMonth.openingAccountsBalance, 3500);
+  assert.equal(firstMonth.closingAccountsBalance, 12500);
+  assert.equal(firstMonth.accountCashflow.length, 2);
+  assert.equal(firstMonth.accountCashflow.find((account) => account.accountId === 'acc-1')?.expensePayments, 1000);
+  assert.equal(projection[1].openingAccountsBalance, firstMonth.closingAccountsBalance);
+});
+
+test('linha do tempo financeira do mês ordena entradas e saídas com conta e status', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 3000 },
+    { id: 'acc-2', bank: 'Nubank', name: 'Reserva', holder: 'Lucas', balance: 500 },
+  ];
+  data.incomes = [
+    income({ id: 'inc-1', name: 'Salário', defaultAccountId: 'acc-1', dueDay: 5, vigencias: [{ id: 'vig-income', amount: 10000, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.incomeReceipts = [{
+    id: 'receipt-1',
+    incomeId: 'inc-1',
+    monthKey: '2026-09',
+    date: '2026-09-04',
+    accountId: 'acc-2',
+    expectedAmount: 10000,
+    receivedAmount: 9800,
+    transactionId: 'tx-income',
+    createdAt: '2026-09-04T00:00:00.000Z',
+  }];
+  data.expenses = [
+    expense({ id: 'exp-1', description: 'Aluguel', dueDay: 6, vigencias: [{ id: 'vig-expense', amount: 2000, startDate: '2026-09', endDate: null }] }),
+  ];
+  data.cards = [card({ id: 'card-1', name: 'Nubank', dueDay: 10 })];
+  data.purchases = [purchase({ id: 'pur-1', cardId: 'card-1', totalAmount: 1500, installments: 1, firstInvoiceMonth: '2026-09' })];
+  data.cardInvoicePayments = [{
+    id: 'card-payment-1',
+    cardId: 'card-1',
+    monthKey: '2026-09',
+    date: '2026-09-09',
+    accountId: 'acc-1',
+    amount: 1500,
+    transactionId: 'tx-card',
+    createdAt: '2026-09-09T00:00:00.000Z',
+  }];
+  data.debts = [debt({ id: 'debt-1', name: 'Empréstimo', dueDate: '2026-09-15', installmentAmount: 700, installmentsRemaining: 2 })];
+  data.expensePayments = [];
+  data.debtPayments = [];
+
+  const timeline = getCashflowTimelineForMonth(data, '2026-09');
+
+  assert.deepEqual(timeline.map((item) => item.date), ['2026-09-04', '2026-09-06', '2026-09-09', '2026-09-15']);
+  assert.deepEqual(timeline.map((item) => item.amount), [9800, -2000, -1500, -700]);
+  assert.equal(timeline[0].status, 'realizado');
+  assert.equal(timeline[0].accountId, 'acc-2');
+  assert.equal(timeline[0].accountLabel, 'Nubank · Lucas');
+  assert.equal(timeline[1].status, 'previsto');
+  assert.equal(timeline[1].accountLabel, 'Conta a definir');
+  assert.equal(timeline[2].originPage, 'cartoes');
+  assert.equal(timeline[3].originPage, 'dividas');
 });
 
 test('estorno de transferência cria duas reversões e restaura saldos', () => {

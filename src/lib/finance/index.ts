@@ -6,6 +6,7 @@ export * from './cardRules';
 export * from './debtRules';
 export * from './accountRules';
 export * from './accountTransactionRules';
+export * from './cashflowTimelineRules';
 export * from './categoryBudgetRules';
 export * from './categoryClassRules';
 export * from './dataQualityRules';

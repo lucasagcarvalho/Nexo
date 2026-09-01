@@ -527,7 +527,7 @@ Concluído:
 
 ## ETAPA 11 — Evoluir o model cadastral de conta
 
-**Status:** [x]  
+**Status:** [x]
 **Prioridade:** P1
 
 ### Objetivo
@@ -645,7 +645,7 @@ Testes:
 
 ## ETAPA 12 — Criar página de detalhe da conta
 
-**Status:** [x]  
+**Status:** [x]
 **Prioridade:** P1
 
 ### Objetivo
@@ -736,7 +736,7 @@ Arquivos:
 
 ## ETAPA 13 — Criar extrato dentro da página da conta
 
-**Status:** [x]  
+**Status:** [x]
 **Prioridade:** P1
 
 ### Objetivo
@@ -1482,7 +1482,7 @@ Arquivos:
 
 ## ETAPA 24 — Separar Resultado do mês de Saldo disponível
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P0
 
 ### Objetivo
@@ -1545,25 +1545,33 @@ Manter Home simples conforme plano de UX já concluído.
 
 ### Critérios de aceite
 
-- [ ] Saldo inicial considerado no caixa.
-- [ ] Receita recebida já presente na conta não é duplicada.
-- [ ] Resultado e saldo disponível são distintos.
-- [ ] Transferências não alteram resultado.
-- [ ] Estornos alteram saldo corretamente.
-- [ ] Valores batem com Contas.
-- [ ] Tooltips explicam diferença.
+- [x] Saldo inicial considerado no caixa.
+- [x] Receita recebida já presente na conta não é duplicada.
+- [x] Resultado e saldo disponível são distintos.
+- [x] Transferências não alteram resultado.
+- [x] Estornos alteram saldo corretamente.
+- [x] Valores batem com Contas.
+- [x] Tooltips explicam diferença.
 
 ### Notas de implementação
 
 ```text
 Layout:
--
+- Dashboard troca "Saldo do mês" por "Resultado do mês".
+- Novo card "Saldo disponível" mostra a soma atual das contas.
+- Drilldown de resultado mostra entradas, saídas e resultado.
+- Drilldown de saldo disponível lista as contas e seus saldos.
+- Gráfico troca série "Saldo" por "Resultado".
 
 Conceitos:
--
+- Resultado do mês = receitas do mês - saídas do mês.
+- Saldo disponível = soma atual dos saldos das contas.
+- Tooltips explicam que entradas não incluem saldo inicial/dinheiro já existente.
+- Transferências internas seguem fora de receitas/despesas e não alteram resultado.
 
 Arquivos:
--
+- `src/pages/DashboardPage.tsx`
+- `test/finance.test.ts`
 ```
 
 ---
@@ -1572,7 +1580,7 @@ Arquivos:
 
 ## ETAPA 25 — Criar projeção mensal por conta
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P0
 
 ### Fórmula por conta
@@ -1595,27 +1603,32 @@ Saldo final Setembro
 
 ### Critérios de aceite
 
-- [ ] Cada conta tem projeção.
-- [ ] Saldo final encadeia mês seguinte.
-- [ ] Agregado = soma das contas.
-- [ ] Transferências anulam no agregado.
-- [ ] Sem dupla contagem.
+- [x] Cada conta tem projeção.
+- [x] Saldo final encadeia mês seguinte.
+- [x] Agregado = soma das contas.
+- [x] Transferências anulam no agregado.
+- [x] Sem dupla contagem.
 
 ### Notas de implementação
 
 ```text
 Engine:
--
+- Criado `projectAccountsByMonth` em `accountRules`.
+- Cada conta recebe saldo inicial, receitas destinadas, pagamentos registrados por conta, transferências e saldo final.
+- Saldo final de cada conta encadeia como saldo inicial do mês seguinte.
+- Agregado mensal soma os saldos/fluxos das contas.
+- Transferências entram nas duas contas e anulam no agregado.
 
 Arquivos:
--
+- `src/lib/finance/accountRules.ts`
+- `test/finance.test.ts`
 ```
 
 ---
 
 ## ETAPA 26 — Evoluir `projectMonths` preservando compatibilidade
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P0
 
 ### Preservar
@@ -1639,21 +1652,25 @@ availableAccountsBalance
 
 ### Critérios de aceite
 
-- [ ] Dashboard funciona.
-- [ ] Planejamento funciona.
-- [ ] Projeção funciona.
-- [ ] Análise funciona.
-- [ ] Testes antigos continuam passando.
-- [ ] Novos campos centralizados.
+- [x] Dashboard funciona.
+- [x] Planejamento funciona.
+- [x] Projeção funciona.
+- [x] Análise funciona.
+- [x] Testes antigos continuam passando.
+- [x] Novos campos centralizados.
 
 ### Notas de implementação
 
 ```text
 Campos:
--
+- `accountCashflow`
+- `openingAccountsBalance`
+- `closingAccountsBalance`
+- `availableAccountsBalance`
 
 Compatibilidade:
--
+- `income`, `totalExpenses`, `balance`, `bankBalance`, `accountsBalance` e `projectedAccountsBalance` foram preservados.
+- Os novos campos usam `projectAccountsByMonth`, sem mudar silenciosamente as telas antigas.
 ```
 
 ---
@@ -1662,7 +1679,7 @@ Compatibilidade:
 
 ## ETAPA 27 — Criar linha do tempo financeira do mês
 
-**Status:** [ ]  
+**Status:** [x]
 **Prioridade:** P1
 
 ### Exemplo
@@ -1677,20 +1694,25 @@ Compatibilidade:
 
 ### Critérios de aceite
 
-- [ ] Ordenação por data.
-- [ ] Entradas e saídas.
-- [ ] Conta.
-- [ ] Previsto/realizado.
-- [ ] Abre origem.
+- [x] Ordenação por data.
+- [x] Entradas e saídas.
+- [x] Conta.
+- [x] Previsto/realizado.
+- [x] Abre origem.
 
 ### Notas de implementação
 
 ```text
 Engine:
--
+- Criado `getCashflowTimelineForMonth`.
+- Timeline agrega receitas, despesas diretas, faturas e dívidas por competência.
+- Itens realizados usam data, valor e conta do pagamento/recebimento.
+- Itens previstos usam vencimento e mostram `Conta a definir` quando ainda não há conta registrada.
 
 UI:
--
+- Modal de detalhe da Visão Geral mostra a linha do tempo financeira do mês.
+- Cada item exibe data, origem, conta, valor assinado e status.
+- Clique no item abre a tela de origem: Receitas, Gastos, Cartões ou Dívidas.
 ```
 
 ---
@@ -2018,6 +2040,10 @@ Arquivos:
 | 2026-08-31 | Etapa 21 — Estornar pagamento mensal de dívida | Concluído | Pagamento mensal de dívida pode ser desfeito com confirmação, removendo o estado mensal, devolvendo saldo à conta e criando `reversal` no extrato com idempotência. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/DividasPage.tsx`, `test/finance.test.ts` |
 | 2026-08-31 | Etapa 22 — Criar transferência global entre contas | Concluído | Tela principal de Contas ganhou transferência global com origem, destino, valor, data, preview antes/depois, alerta de saldo negativo e duas pernas `transfer_out`/`transfer_in` com mesmo identificador sem afetar receitas/despesas. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ContasPage.tsx`, `test/finance.test.ts` |
 | 2026-08-31 | Etapa 23 — Permitir estorno de transferência | Concluído | Transferências podem ser estornadas pelo extrato com confirmação, criando duas reversões consistentes, restaurando saldos e preservando as pernas originais sem afetar receitas/despesas. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ContasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 24 — Separar Resultado do mês de Saldo disponível | Concluído | Dashboard passou a distinguir resultado mensal de saldo disponível, com novo card de saldo das contas, drilldowns separados, tooltips conceituais e gráfico usando "Resultado" em vez de "Saldo". | `src/pages/DashboardPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 25 — Criar projeção mensal por conta | Concluído | Criado engine `projectAccountsByMonth` com projeção por conta, saldo final encadeado, componentes por tipo de fluxo e agregado que soma contas sem duplicar transferências. | `src/lib/finance/accountRules.ts`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 26 — Evoluir `projectMonths` preservando compatibilidade | Concluído | `projectMonths` passou a expor cashflow mensal por conta e saldos de abertura, fechamento e disponível, mantendo os campos antigos e centralizando os novos contratos em `finance/types`. | `src/lib/finance/types.ts`, `src/lib/finance/accountRules.ts`, `src/lib/finance/projection.ts`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 27 — Criar linha do tempo financeira do mês | Concluído | Criada timeline mensal com receitas, despesas, faturas e dívidas ordenadas por data, conta vinculada, status previsto/realizado e navegação para a tela de origem pelo detalhe da Visão Geral. | `src/lib/finance/types.ts`, `src/lib/finance/cashflowTimelineRules.ts`, `src/lib/finance/index.ts`, `src/App.tsx`, `src/pages/VisaoGeralPage.tsx`, `test/finance.test.ts` |
 
 ---
 

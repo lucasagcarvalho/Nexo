@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, Info, AlertTriangle, LineChart as LineChartIcon, Banknote, ReceiptText, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, CreditCard, Wallet, PieChart as PieChartIcon, AlertCircle, Info, AlertTriangle, LineChart as LineChartIcon, Banknote, ReceiptText, ChevronRight, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { cardInvoiceDetail, getPlanningMonthDetails, projectMonths, generateAlerts, getCardMonthlyLimit, getFinancialHealthIndicators, getProjectionHorizonSummaries } from '@/lib/projection';
 import { formatCurrency, formatPercent, monthLabelShort, formatMonthBR } from '@/lib/format';
+import { formatBankAccountLabel } from '@/lib/finance/accountRules';
 import { Card, StatCard, Badge, ProgressBar, Modal } from '@/components/ui';
 import type { PageId } from '@/components/Layout';
 import type { FinancialHealthIndicator } from '@/lib/projection';
@@ -55,6 +56,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const cardLimit = getCardMonthlyLimit(data.settings, selectedMonth);
   const cardPct = cardLimit > 0 ? (current.cardExpenses / cardLimit) * 100 : 0;
   const cardColor = cardPct > 100 ? 'red' : cardPct >= 80 ? 'yellow' : 'green';
+  const availableBalance = data.bankAccounts.reduce((sum, account) => sum + account.balance, 0);
 
   const balancePct = current.income > 0 ? (current.balance / current.income) * 100 : 0;
   let statusLabel = 'Saudável';
@@ -67,13 +69,14 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
   const incomeContext = current.income > 0 ? 'Base para cobrir as saídas do mês.' : 'Sem entradas previstas neste mês.';
   const expenseContext = current.balance >= 0 ? 'As saídas cabem nas entradas atuais.' : 'As saídas passam das entradas.';
   const unpaidContext = current.unpaidExpenses > 0 ? 'Ainda precisa de atenção no mês.' : 'Não há pendências nas saídas.';
-  const balanceContext = current.balance >= 0 ? 'Há folga prevista neste mês.' : 'O mês pode fechar no negativo.';
+  const resultContext = current.balance >= 0 ? 'Entradas menos saídas do mês.' : 'As saídas superam as entradas.';
+  const availableBalanceContext = data.bankAccounts.length > 0 ? `${data.bankAccounts.length} conta(s) cadastrada(s).` : 'Nenhuma conta cadastrada.';
 
   const flowData = projection.months.slice(0, 12).map((m) => ({
     month: monthLabelShort(m.monthKey),
     Receitas: Math.round(m.income),
     Despesas: Math.round(m.totalExpenses),
-    Saldo: Math.round(m.balance),
+    Resultado: Math.round(m.balance),
   }));
 
   const openDetail = (title: string, content: React.ReactNode) => {
@@ -148,12 +151,32 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
     ));
   };
 
-  const showBalanceDetail = () => {
-    openDetail(`Saldo previsto · ${formatMonthBR(selectedMonth)}`, (
+  const showResultDetail = () => {
+    openDetail(`Resultado do mês · ${formatMonthBR(selectedMonth)}`, (
       <div className="space-y-2">
-        <DetailRow label="Receitas" amount={current.income} colorClass={statusText.neutral} />
-        <DetailRow label="Despesas previstas" amount={-current.expectedExpenses} colorClass={statusText.neutral} />
-        <DetailRow label="Saldo previsto" amount={current.balance} colorClass={current.balance >= 0 ? statusText.positive : statusText.critical} strong />
+        <p className="text-sm text-gray-600">Resultado é o fluxo do mês: entradas menos saídas. Ele não soma o dinheiro que já estava nas contas.</p>
+        <DetailRow label="Entradas do mês" amount={current.income} colorClass={statusText.neutral} />
+        <DetailRow label="Saídas previstas" amount={-current.expectedExpenses} colorClass={statusText.neutral} />
+        <DetailRow label="Resultado do mês" amount={current.balance} colorClass={current.balance >= 0 ? statusText.positive : statusText.critical} strong />
+      </div>
+    ));
+  };
+
+  const showAvailableBalanceDetail = () => {
+    openDetail(`Saldo disponível · ${formatMonthBR(selectedMonth)}`, (
+      <div className="space-y-3">
+        <p className="text-sm text-gray-600">Saldo disponível é o estoque atual de dinheiro nas contas. Receitas já recebidas e transferências internas não são somadas de novo como entrada.</p>
+        <DrillDownList
+          items={data.bankAccounts.map((account) => ({
+            id: account.id,
+            label: formatBankAccountLabel(account),
+            meta: account.accountType ?? 'Conta bancária',
+            amount: account.balance,
+            colorClass: account.balance >= 0 ? statusText.positive : statusText.critical,
+          }))}
+          totalLabel="Saldo disponível"
+          total={availableBalance}
+        />
       </div>
     ));
   };
@@ -329,11 +352,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
       </header>
 
       {/* Bloco 1: resumo do mês */}
-      <section aria-label="Resumo do mês" className="grid grid-cols-2 xl:grid-cols-4 gap-1">
-        <StatCard title="Entradas" value={formatCurrency(current.income)} subtitle={incomeContext} color="blue" icon={<TrendingUp size={18} />} onClick={showIncomeDetail} tooltip="Receitas previstas do mês." />
-        <StatCard title="Saídas" value={formatCurrency(current.realizedExpenses)} subtitle={expenseContext} color={current.balance < 0 ? 'red' : 'gray'} icon={<ReceiptText size={18} />} onClick={() => showExpensesDetail('Saídas', 'realized')} tooltip={`Previsto: ${formatCurrency(current.expectedExpenses)}.`} />
+      <section aria-label="Resumo do mês" className="grid grid-cols-2 xl:grid-cols-5 gap-1">
+        <StatCard title="Entradas" value={formatCurrency(current.income)} subtitle={incomeContext} color="blue" icon={<TrendingUp size={18} />} onClick={showIncomeDetail} tooltip="Receitas do mês. Não inclui saldo inicial nem dinheiro já existente nas contas." />
+        <StatCard title="Saídas" value={formatCurrency(current.realizedExpenses)} subtitle={expenseContext} color={current.balance < 0 ? 'red' : 'gray'} icon={<ReceiptText size={18} />} onClick={() => showExpensesDetail('Saídas', 'realized')} tooltip={`Despesas do mês conforme o motor financeiro. Previsto: ${formatCurrency(current.expectedExpenses)}.`} />
         <StatCard title="A pagar" value={formatCurrency(current.unpaidExpenses)} subtitle={`${formatPercent(unpaidPercent)} pendente. ${unpaidContext}`} color={current.unpaidExpenses > 0 ? 'yellow' : 'green'} icon={<Banknote size={18} />} onClick={() => showExpensesDetail('A pagar', 'unpaid')} tooltip="Saídas ainda pendentes." />
-        <StatCard title="Saldo do mês" value={formatCurrency(current.balance)} subtitle={balanceContext} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} onClick={showBalanceDetail} tooltip={`Saldo em contas: ${formatCurrency(current.projectedAccountsBalance)}.`} />
+        <StatCard title="Resultado do mês" value={formatCurrency(current.balance)} subtitle={resultContext} color={current.balance >= 0 ? 'green' : 'red'} icon={<Wallet size={18} />} onClick={showResultDetail} tooltip="Entradas menos saídas do mês. Não representa o dinheiro total disponível." />
+        <StatCard title="Saldo disponível" value={formatCurrency(availableBalance)} subtitle={availableBalanceContext} color={availableBalance >= 0 ? 'green' : 'red'} icon={<Building2 size={18} />} onClick={showAvailableBalanceDetail} tooltip="Soma atual dos saldos das contas. Inclui saldo inicial, recebimentos, pagamentos, estornos e transferências internas." />
       </section>
 
       <section aria-label="Cartões e próximos meses" className="grid grid-cols-1 xl:grid-cols-2 gap-2">
@@ -483,7 +507,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: PageId) => void 
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Line type="monotone" dataKey="Receitas" stroke="#64748B" strokeWidth={2} dot={{ r: 3 }} />
                   <Line type="monotone" dataKey="Despesas" stroke="#94A3B8" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="Saldo" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="Resultado" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
