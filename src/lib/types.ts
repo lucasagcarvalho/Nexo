@@ -218,6 +218,18 @@ export interface CardInvoicePayment {
   createdAt: string;
 }
 
+export interface DebtPayment {
+  id: string;
+  debtId: string;
+  monthKey: string; // YYYY-MM
+  date: string; // YYYY-MM-DD
+  accountId: string;
+  expectedAmount: number;
+  paidAmount: number;
+  transactionId: string;
+  createdAt: string;
+}
+
 export type AccountTransactionKind =
   | 'initial_balance'
   | 'income_receipt'
@@ -290,6 +302,7 @@ export interface AppData {
   incomeReceipts?: IncomeReceipt[];
   expensePayments?: ExpensePayment[];
   cardInvoicePayments?: CardInvoicePayment[];
+  debtPayments?: DebtPayment[];
   people: PersonEntry[];
   incomeTypes: string[];
   categoryBudgets: CategoryBudget[];

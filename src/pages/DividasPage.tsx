@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, Landmark, Wallet, Percent, CalendarCheck, ListChecks, Hash, UserRound } from 'lucide-react';
 import { useData } from '@/store/DataContext';
-import { getDebtCommitmentSummary } from '@/lib/projection';
+import { debtPaymentForMonth, getDebtCommitmentSummary } from '@/lib/projection';
 import { useMonth } from '@/store/MonthContext';
-import { formatCurrency, formatDate, formatMonthBR, formatPercent } from '@/lib/format';
+import { formatCurrency, formatDate, formatDateBR, formatMonthBR, formatPercent } from '@/lib/format';
+import { formatBankAccountLabel } from '@/lib/finance/accountRules';
 import type { Debt, DebtStatus } from '@/lib/types';
-import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, PersonSelect, IconButton, StatCard } from '@/components/ui';
+import { Card, Badge, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, PersonSelect, IconButton, StatCard, CurrencyInput, BalanceChangeConfirmDialog } from '@/components/ui';
 
 const DEBT_STATUSES: DebtStatus[] = ['Em aberto', 'Negociação', 'Parcelada', 'Quitada'];
 const STATUS_COLORS: Record<DebtStatus, 'red' | 'yellow' | 'blue' | 'green'> = {
@@ -16,11 +17,19 @@ const STATUS_COLORS: Record<DebtStatus, 'red' | 'yellow' | 'blue' | 'green'> = {
 };
 
 export function DividasPage() {
-  const { data, addDebt, updateDebt, deleteDebt, addPerson } = useData();
+  const { data, addDebt, updateDebt, deleteDebt, payDebt, undoDebtPayment, isDebtPaidForMonth, addPerson } = useData();
   const { selectedMonth } = useMonth();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Debt | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [paying, setPaying] = useState<Debt | null>(null);
+  const [confirmPayment, setConfirmPayment] = useState(false);
+  const [confirmPaymentReversal, setConfirmPaymentReversal] = useState<Debt | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    date: '',
+    amount: 0,
+    accountId: '',
+  });
 
   const [form, setForm] = useState<Omit<Debt, 'id'>>({
     name: '', institution: '', balance: 0, installmentAmount: 0, installmentsRemaining: 0,
@@ -48,6 +57,66 @@ export function DividasPage() {
     }
     setModalOpen(false);
   };
+
+  const accountOptions = useMemo(() => [
+    { value: '', label: 'Selecione a conta' },
+    ...data.bankAccounts.map((account) => ({
+      value: account.id,
+      label: formatBankAccountLabel(account),
+    })),
+  ], [data.bankAccounts]);
+
+  const dateForDebtMonth = (debt: Debt, monthKey: string): string => {
+    const dueDay = Number(debt.dueDate.slice(8, 10));
+    const [year, month] = monthKey.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const day = Math.min(Math.max(Number.isFinite(dueDay) ? dueDay : 1, 1), lastDay);
+    return `${monthKey}-${String(day).padStart(2, '0')}`;
+  };
+
+  const openPayment = (debt: Debt) => {
+    const expectedAmount = debtPaymentForMonth(debt, selectedMonth);
+    if (expectedAmount <= 0 || isDebtPaidForMonth(debt.id, selectedMonth)) return;
+    setPaying(debt);
+    setPaymentForm({
+      date: dateForDebtMonth(debt, selectedMonth),
+      amount: expectedAmount,
+      accountId: data.bankAccounts[0]?.id ?? '',
+    });
+  };
+
+  const requestPaymentConfirmation = () => {
+    if (!paying || !paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0) return;
+    setConfirmPayment(true);
+  };
+
+  const savePayment = () => {
+    if (!paying || !paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0) return;
+    payDebt({
+      debtId: paying.id,
+      monthKey: selectedMonth,
+      date: paymentForm.date,
+      accountId: paymentForm.accountId,
+      expectedAmount: debtPaymentForMonth(paying, selectedMonth),
+      paidAmount: paymentForm.amount,
+    });
+    setConfirmPayment(false);
+    setPaying(null);
+  };
+
+  const selectedPaymentAccount = paymentForm.accountId
+    ? data.bankAccounts.find((account) => account.id === paymentForm.accountId) ?? null
+    : null;
+  const paymentNextBalance = selectedPaymentAccount ? selectedPaymentAccount.balance - paymentForm.amount : undefined;
+  const paymentWarning = paymentNextBalance !== undefined && paymentNextBalance < 0
+    ? `Este pagamento deixará a conta em ${formatCurrency(paymentNextBalance)}.`
+    : null;
+  const reversalPayment = confirmPaymentReversal
+    ? (data.debtPayments ?? []).find((payment) => payment.debtId === confirmPaymentReversal.id && payment.monthKey === selectedMonth) ?? null
+    : null;
+  const reversalPaymentAccount = reversalPayment
+    ? data.bankAccounts.find((account) => account.id === reversalPayment.accountId) ?? null
+    : null;
 
   const debtSummary = useMemo(() => getDebtCommitmentSummary(data, selectedMonth), [data, selectedMonth]);
   const activeDebtIds = new Set(debtSummary.debts.map((debt) => debt.debtId));
@@ -181,6 +250,8 @@ export function DividasPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {activeDebts.map((debt) => {
               const indicators = debtSummary.debts.find((item) => item.debtId === debt.id);
+              const monthlyPayment = indicators?.monthlyPayment ?? debtPaymentForMonth(debt, selectedMonth);
+              const paid = isDebtPaidForMonth(debt.id, selectedMonth);
               return (
               <Card key={debt.id} className="p-4">
                 <div className="flex items-start justify-between mb-3">
@@ -188,11 +259,14 @@ export function DividasPage() {
                     <h3 className="font-semibold text-gray-900">{debt.name}</h3>
                     <p className="text-xs text-gray-400">{debt.institution}</p>
                   </div>
-                  <Badge color={STATUS_COLORS[debt.status]}>{debt.status}</Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge color={STATUS_COLORS[debt.status]}>{debt.status}</Badge>
+                    {paid && <Badge color="green">Pago no mês</Badge>}
+                  </div>
                 </div>
                 <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between"><span className="text-gray-400">Saldo atual</span><span className="font-bold text-rose-600">{formatCurrency(indicators?.currentBalance ?? debt.balance)}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-400">Parcela mensal</span><span className="text-gray-700">{formatCurrency(indicators?.monthlyPayment ?? debt.installmentAmount)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Parcela mensal</span><span className="text-gray-700">{formatCurrency(monthlyPayment)}</span></div>
                   <div className="flex justify-between"><span className="text-gray-400">Parcelas restantes</span><span className="text-gray-700">{indicators?.installmentsRemaining ?? debt.installmentsRemaining}</span></div>
                   <div className="flex justify-between"><span className="text-gray-400">Término estimado</span><span className="text-gray-700">{indicators?.payoffMonth ? formatMonthBR(indicators.payoffMonth) : 'Sem previsão'}</span></div>
                   <div className="flex justify-between"><span className="text-gray-400">Juros / custo</span><span className="text-gray-700">{indicators?.interestRate === null || indicators?.interestRate === undefined ? 'Não informado' : `${formatPercent(indicators.interestRate)} a.m.`}</span></div>
@@ -203,7 +277,17 @@ export function DividasPage() {
                   <ListChecks size={14} className="text-blue-500" />
                   <span>{indicators?.payoffMonth ? `Última parcela prevista em ${formatMonthBR(indicators.payoffMonth)}.` : 'Sem parcelas futuras configuradas.'}</span>
                 </div>
-                <div className="flex gap-1 mt-3">
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {monthlyPayment > 0 && !paid && (
+                    <Button onClick={() => openPayment(debt)}>
+                      Pagar parcela
+                    </Button>
+                  )}
+                  {paid && (
+                    <Button variant="secondary" onClick={() => setConfirmPaymentReversal(debt)}>
+                      Desfazer pagamento
+                    </Button>
+                  )}
                   <IconButton icon={<Edit2 size={14} />} label="Editar dívida" onClick={() => openEdit(debt)} />
                   <IconButton icon={<Trash2 size={14} />} label="Excluir dívida" variant="danger" onClick={() => setConfirmDelete(debt.id)} />
                 </div>
@@ -265,6 +349,60 @@ export function DividasPage() {
           <button type="submit" className="hidden" aria-hidden="true" />
         </form>
       </Modal>
+
+      <Modal open={paying !== null} onClose={() => setPaying(null)} title="Registrar pagamento de dívida" footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setPaying(null)}>Cancelar</Button>
+          <Button onClick={requestPaymentConfirmation} disabled={!paymentForm.accountId || !paymentForm.date || paymentForm.amount <= 0}>
+            Revisar pagamento
+          </Button>
+        </div>
+      }>
+        {paying && (
+          <form onSubmit={(e) => { e.preventDefault(); requestPaymentConfirmation(); }} className="space-y-3">
+            <div className="p-3 bg-rose-50 rounded-lg">
+              <p className="text-sm font-semibold text-rose-700">{paying.name}</p>
+              <p className="text-xs text-gray-500">Previsto: {formatCurrency(debtPaymentForMonth(paying, selectedMonth))} · {paying.institution || 'Instituição não informada'}</p>
+            </div>
+            <Input label="Data paga" type="date" value={paymentForm.date} onChange={(v) => setPaymentForm({ ...paymentForm, date: v })} required />
+            <CurrencyInput label="Valor pago" value={paymentForm.amount} onChange={(v) => setPaymentForm({ ...paymentForm, amount: v })} required />
+            <Select label="Conta" value={paymentForm.accountId} onChange={(v) => setPaymentForm({ ...paymentForm, accountId: v })} options={accountOptions} required />
+            <button type="submit" className="hidden" aria-hidden="true" />
+          </form>
+        )}
+      </Modal>
+
+      <BalanceChangeConfirmDialog
+        open={confirmPayment}
+        title="Confirmar pagamento?"
+        itemName={paying?.name ?? ''}
+        amount={paymentForm.amount}
+        accountLabel={selectedPaymentAccount ? formatBankAccountLabel(selectedPaymentAccount) : 'Conta não selecionada'}
+        date={paymentForm.date ? formatDateBR(paymentForm.date) : undefined}
+        currentBalance={selectedPaymentAccount?.balance}
+        nextBalance={paymentNextBalance}
+        warning={paymentWarning}
+        confirmText={paymentWarning ? 'Continuar mesmo assim' : 'Confirmar pagamento'}
+        onConfirm={savePayment}
+        onCancel={() => setConfirmPayment(false)}
+        onChooseAnotherAccount={() => setConfirmPayment(false)}
+      />
+
+      <BalanceChangeConfirmDialog
+        open={confirmPaymentReversal !== null}
+        title="Desfazer pagamento?"
+        itemName={confirmPaymentReversal?.name ?? ''}
+        amount={reversalPayment?.paidAmount ?? (confirmPaymentReversal ? debtPaymentForMonth(confirmPaymentReversal, selectedMonth) : 0)}
+        accountLabel={reversalPaymentAccount ? formatBankAccountLabel(reversalPaymentAccount) : 'Conta não localizada'}
+        currentBalance={reversalPaymentAccount?.balance}
+        nextBalance={reversalPaymentAccount && reversalPayment ? reversalPaymentAccount.balance + reversalPayment.paidAmount : undefined}
+        confirmText="Desfazer pagamento"
+        onConfirm={() => {
+          if (confirmPaymentReversal) undoDebtPayment(confirmPaymentReversal.id, selectedMonth);
+          setConfirmPaymentReversal(null);
+        }}
+        onCancel={() => setConfirmPaymentReversal(null)}
+      />
 
       <ConfirmDialog
         open={!!confirmDelete}

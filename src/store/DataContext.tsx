@@ -1,11 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import type { AccountTransaction, AppData, Income, IncomeReceipt, Expense, ExpensePayment, CreditCard, CardPurchase, CardInvoicePayment, Debt, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
+import type { AccountTransaction, AppData, Income, IncomeReceipt, Expense, ExpensePayment, CreditCard, CardPurchase, CardInvoicePayment, Debt, DebtPayment, Scenario, Settings, PendingExpense, BankAccount, BankBalanceSnapshot, Vigencia, PersonEntry, CategoryEntry, CategoryBudget } from '@/lib/types';
 import { loadLocalData, saveLocalData, loadRemoteData, saveRemoteData, resetData, migrateData } from '@/lib/storage';
 import { defaultCategoryClass } from '@/lib/seed';
 import { uid, currentMonthKey, addMonths, compareMonths } from '@/lib/format';
 import { getActiveVigencia as getFinanceActiveVigencia, invoiceStatusKey, isExpensePaidForMonth as getFinanceExpensePaidForMonth } from '@/lib/projection';
 import { formatBankAccountLabel } from '@/lib/finance/accountRules';
-import { calculateAccountLedgerBalance, createCardInvoicePaymentReversalTransaction, createCardInvoicePaymentTransaction, createExpensePaymentReversalTransaction, createExpensePaymentTransaction, createIncomeReceiptReversalTransaction, createIncomeReceiptTransaction, createManualAdjustmentTransaction, getCardInvoicePaymentForMonth, getExpensePaymentForMonth, getIncomeReceiptForMonth } from '@/lib/finance/accountTransactionRules';
+import { calculateAccountLedgerBalance, createCardInvoicePaymentReversalTransaction, createCardInvoicePaymentTransaction, createDebtPaymentReversalTransaction, createDebtPaymentTransaction, createExpensePaymentReversalTransaction, createExpensePaymentTransaction, createIncomeReceiptReversalTransaction, createIncomeReceiptTransaction, createManualAdjustmentTransaction, createTransferReversalTransactions, createTransferTransactions, getCardInvoicePaymentForMonth, getDebtPaymentForMonth, getExpensePaymentForMonth, getIncomeReceiptForMonth, getTransferTransactions } from '@/lib/finance/accountTransactionRules';
 import { useAuth } from '@/store/AuthContext';
 
 interface DataContextValue {
@@ -59,6 +59,16 @@ interface DataContextValue {
   addDebt: (debt: Omit<Debt, 'id'>) => void;
   updateDebt: (id: string, updates: Partial<Debt>) => void;
   deleteDebt: (id: string) => void;
+  payDebt: (input: {
+    debtId: string;
+    monthKey: string;
+    date: string;
+    accountId: string;
+    expectedAmount: number;
+    paidAmount: number;
+  }) => void;
+  undoDebtPayment: (debtId: string, monthKey: string, date?: string) => void;
+  isDebtPaidForMonth: (debtId: string, monthKey: string) => boolean;
   // Scenarios
   addScenario: (scenario: Omit<Scenario, 'id'>) => void;
   updateScenario: (id: string, updates: Partial<Scenario>) => void;
@@ -85,6 +95,14 @@ interface DataContextValue {
   updateBankAccount: (id: string, updates: Partial<BankAccount>) => void;
   deleteBankAccount: (id: string) => void;
   reconcileBankAccountBalance: (accountId: string, realBalance: number, date: string, note?: string) => void;
+  transferBalance: (input: {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    date: string;
+    note?: string;
+  }) => void;
+  undoTransfer: (transferId: string, date?: string) => void;
   // Bank balance snapshots
   addBalanceSnapshot: (snapshot: Omit<BankBalanceSnapshot, 'id'>) => void;
   // People
@@ -560,6 +578,96 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (debt) addHistory('exclusão', 'dívida', `Dívida "${debt.name}" excluída.`);
   }, [data.debts, addHistory]);
 
+  const payDebt = useCallback((input: {
+    debtId: string;
+    monthKey: string;
+    date: string;
+    accountId: string;
+    expectedAmount: number;
+    paidAmount: number;
+  }) => {
+    let debtName = '';
+    let accountName = '';
+    let paidAmount = 0;
+    setData((prev) => {
+      const debt = prev.debts.find((item) => item.id === input.debtId);
+      const account = prev.bankAccounts.find((item) => item.id === input.accountId);
+      if (!debt || !account) return prev;
+      if (getDebtPaymentForMonth(prev, input.debtId, input.monthKey)) return prev;
+      const transaction = createDebtPaymentTransaction(
+        input.debtId,
+        input.accountId,
+        input.paidAmount,
+        input.date,
+        input.monthKey,
+        `Pagamento de "${debt.name}".`,
+      );
+      if (!transaction) return prev;
+
+      debtName = debt.name;
+      accountName = formatBankAccountLabel(account);
+      paidAmount = Math.abs(transaction.amount);
+      const payment: DebtPayment = {
+        id: uid(),
+        debtId: input.debtId,
+        monthKey: input.monthKey,
+        date: input.date,
+        accountId: input.accountId,
+        expectedAmount: input.expectedAmount,
+        paidAmount,
+        transactionId: transaction.id,
+        createdAt: transaction.createdAt,
+      };
+
+      return {
+        ...prev,
+        debtPayments: [...(prev.debtPayments ?? []), payment],
+        accountTransactions: [...(prev.accountTransactions ?? []), transaction],
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === input.accountId ? { ...item, balance: item.balance + transaction.amount } : item
+        )),
+      };
+    });
+    if (debtName) {
+      addHistory('pagamento', 'dívida', `Dívida "${debtName}" paga em "${accountName}" no valor de R$ ${paidAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
+
+  const undoDebtPayment = useCallback((debtId: string, monthKey: string, date?: string) => {
+    let debtName = '';
+    let accountName = '';
+    let reversedAmount = 0;
+    setData((prev) => {
+      const payment = getDebtPaymentForMonth(prev, debtId, monthKey);
+      if (!payment) return prev;
+      const transaction = (prev.accountTransactions ?? []).find((item) => item.id === payment.transactionId);
+      const reversal = createDebtPaymentReversalTransaction(prev, debtId, monthKey, date);
+      if (!transaction || !reversal) return prev;
+      const debt = prev.debts.find((item) => item.id === debtId);
+      const account = prev.bankAccounts.find((item) => item.id === payment.accountId);
+
+      debtName = debt?.name ?? payment.debtId;
+      accountName = account ? formatBankAccountLabel(account) : payment.accountId;
+      reversedAmount = Math.abs(transaction.amount);
+
+      return {
+        ...prev,
+        debtPayments: (prev.debtPayments ?? []).filter((item) => item.id !== payment.id),
+        accountTransactions: [...(prev.accountTransactions ?? []), reversal],
+        bankAccounts: prev.bankAccounts.map((item) => (
+          item.id === payment.accountId ? { ...item, balance: item.balance - transaction.amount } : item
+        )),
+      };
+    });
+    if (debtName) {
+      addHistory('estorno', 'dívida', `Pagamento da dívida "${debtName}" em "${accountName}" desfeito no valor de R$ ${reversedAmount.toFixed(2).replace('.', ',')}.`);
+    }
+  }, [addHistory]);
+
+  const isDebtPaidForMonth = useCallback((debtId: string, monthKey: string): boolean => {
+    return !!getDebtPaymentForMonth(data, debtId, monthKey);
+  }, [data]);
+
   const addScenario = useCallback((scenario: Omit<Scenario, 'id'>) => {
     const newScenario: Scenario = { ...scenario, id: uid() };
     setData((prev) => ({ ...prev, scenarios: [...prev.scenarios, newScenario] }));
@@ -769,6 +877,82 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [addHistory]);
 
+  const transferBalance = useCallback((input: {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    date: string;
+    note?: string;
+  }) => {
+    let fromName = '';
+    let toName = '';
+    let transferAmount = 0;
+    setData((prev) => {
+      const fromAccount = prev.bankAccounts.find((item) => item.id === input.fromAccountId);
+      const toAccount = prev.bankAccounts.find((item) => item.id === input.toAccountId);
+      if (!fromAccount || !toAccount) return prev;
+      const transactions = createTransferTransactions(
+        input.fromAccountId,
+        input.toAccountId,
+        input.amount,
+        input.date,
+        input.note || `Transferência de ${formatBankAccountLabel(fromAccount)} para ${formatBankAccountLabel(toAccount)}.`,
+      );
+      if (!transactions) return prev;
+      const [outTransaction, inTransaction] = transactions;
+
+      fromName = formatBankAccountLabel(fromAccount);
+      toName = formatBankAccountLabel(toAccount);
+      transferAmount = Math.abs(outTransaction.amount);
+
+      return {
+        ...prev,
+        accountTransactions: [...(prev.accountTransactions ?? []), outTransaction, inTransaction],
+        bankAccounts: prev.bankAccounts.map((item) => {
+          if (item.id === input.fromAccountId) return { ...item, balance: item.balance + outTransaction.amount };
+          if (item.id === input.toAccountId) return { ...item, balance: item.balance + inTransaction.amount };
+          return item;
+        }),
+      };
+    });
+    if (fromName && toName) {
+      addHistory('transferência', 'conta', `Transferidos R$ ${transferAmount.toFixed(2).replace('.', ',')} de "${fromName}" para "${toName}".`);
+    }
+  }, [addHistory]);
+
+  const undoTransfer = useCallback((transferId: string, date?: string) => {
+    let fromName = '';
+    let toName = '';
+    let transferAmount = 0;
+    setData((prev) => {
+      const originals = getTransferTransactions(prev, transferId);
+      const outTransaction = originals.find((transaction) => transaction.kind === 'transfer_out');
+      const inTransaction = originals.find((transaction) => transaction.kind === 'transfer_in');
+      if (!outTransaction || !inTransaction) return prev;
+      const reversals = createTransferReversalTransactions(prev, transferId, date);
+      if (!reversals) return prev;
+      const fromAccount = prev.bankAccounts.find((account) => account.id === outTransaction.accountId);
+      const toAccount = prev.bankAccounts.find((account) => account.id === inTransaction.accountId);
+      if (!fromAccount || !toAccount) return prev;
+
+      fromName = formatBankAccountLabel(fromAccount);
+      toName = formatBankAccountLabel(toAccount);
+      transferAmount = Math.abs(outTransaction.amount);
+
+      return {
+        ...prev,
+        accountTransactions: [...(prev.accountTransactions ?? []), ...reversals],
+        bankAccounts: prev.bankAccounts.map((account) => {
+          const reversal = reversals.find((transaction) => transaction.accountId === account.id);
+          return reversal ? { ...account, balance: account.balance + reversal.amount } : account;
+        }),
+      };
+    });
+    if (fromName && toName) {
+      addHistory('estorno', 'transferência', `Transferência de R$ ${transferAmount.toFixed(2).replace('.', ',')} de "${fromName}" para "${toName}" desfeita.`);
+    }
+  }, [addHistory]);
+
   const addBalanceSnapshot = useCallback((snapshot: Omit<BankBalanceSnapshot, 'id'>) => {
     const newSnapshot: BankBalanceSnapshot = { ...snapshot, id: uid() };
     setData((prev) => ({ ...prev, bankBalanceSnapshots: [...prev.bankBalanceSnapshots, newSnapshot] }));
@@ -972,7 +1156,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addExpense, updateExpense, deleteExpense, duplicateExpense, togglePaidMonth, payExpense, undoExpensePayment, isExpensePaidForMonth, deleteExpenseMonth,
     addCard, updateCard, deleteCard,
     addPurchase, updatePurchase, deletePurchase, duplicatePurchase,
-    addDebt, updateDebt, deleteDebt,
+    addDebt, updateDebt, deleteDebt, payDebt, undoDebtPayment, isDebtPaidForMonth,
     addScenario, updateScenario, deleteScenario,
     updateSettings,
     updateCardMonthlyLimit,
@@ -980,7 +1164,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addCategoryBudget, updateCategoryBudget, deleteCategoryBudget,
     markPendingAdded, addPendingExpense, deletePendingExpense,
     addHistory,
-    addBankAccount, updateBankAccount, deleteBankAccount, reconcileBankAccountBalance,
+    addBankAccount, updateBankAccount, deleteBankAccount, reconcileBankAccountBalance, transferBalance, undoTransfer,
     addBalanceSnapshot,
     addPerson, updatePerson, deletePerson, togglePerson,
     addIncomeType,

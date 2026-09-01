@@ -1,4 +1,4 @@
-import type { AccountTransaction, AccountTransactionRelatedEntityType, AppData, ExpensePayment, IncomeReceipt, CardInvoicePayment } from '../types';
+import type { AccountTransaction, AccountTransactionRelatedEntityType, AppData, ExpensePayment, IncomeReceipt, CardInvoicePayment, DebtPayment } from '../types';
 import { uid } from '../format';
 
 export interface AccountLedgerBalanceComparison {
@@ -300,6 +300,142 @@ export function createCardInvoicePaymentReversalTransaction(
   const transaction = getAccountTransactions(data).find((item) => item.id === payment.transactionId);
   if (!transaction || isTransactionReversed(data, transaction.id)) return null;
   return createReversalTransaction(transaction, date ?? payment.date);
+}
+
+export function createDebtPaymentTransaction(
+  debtId: string,
+  accountId: string,
+  amount: number,
+  date: string,
+  relatedMonthKey: string,
+  note?: string,
+): AccountTransaction | null {
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (
+    !debtId
+    || !accountId
+    || !isValidDateKey(date)
+    || !isValidMonthKey(relatedMonthKey)
+    || !Number.isFinite(roundedAmount)
+    || roundedAmount <= 0
+  ) {
+    return null;
+  }
+  return {
+    id: uid(),
+    accountId,
+    date,
+    monthKey: date.slice(0, 7),
+    amount: -roundedAmount,
+    kind: 'debt_payment',
+    relatedEntityType: 'debt',
+    relatedEntityId: debtId,
+    relatedMonthKey,
+    note: note || 'Pagamento de dívida.',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function getDebtPaymentForMonth(data: AppData, debtId: string, monthKey: string): DebtPayment | null {
+  return (data.debtPayments ?? []).find((payment) => (
+    payment.debtId === debtId
+    && payment.monthKey === monthKey
+  )) ?? null;
+}
+
+export function createDebtPaymentReversalTransaction(
+  data: AppData,
+  debtId: string,
+  monthKey: string,
+  date?: string,
+): AccountTransaction | null {
+  const payment = getDebtPaymentForMonth(data, debtId, monthKey);
+  if (!payment) return null;
+  const transaction = getAccountTransactions(data).find((item) => item.id === payment.transactionId);
+  if (!transaction || isTransactionReversed(data, transaction.id)) return null;
+  return createReversalTransaction(transaction, date ?? payment.date);
+}
+
+export function createTransferTransactions(
+  fromAccountId: string,
+  toAccountId: string,
+  amount: number,
+  date: string,
+  note?: string,
+): [AccountTransaction, AccountTransaction] | null {
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (
+    !fromAccountId
+    || !toAccountId
+    || fromAccountId === toAccountId
+    || !isValidDateKey(date)
+    || !Number.isFinite(roundedAmount)
+    || roundedAmount <= 0
+  ) {
+    return null;
+  }
+  const transferId = uid();
+  const createdAt = new Date().toISOString();
+  const monthKey = date.slice(0, 7);
+  return [
+    {
+      id: uid(),
+      accountId: fromAccountId,
+      date,
+      monthKey,
+      amount: -roundedAmount,
+      kind: 'transfer_out',
+      relatedEntityType: 'transfer',
+      relatedEntityId: transferId,
+      note: note || 'Transferência entre contas.',
+      createdAt,
+    },
+    {
+      id: uid(),
+      accountId: toAccountId,
+      date,
+      monthKey,
+      amount: roundedAmount,
+      kind: 'transfer_in',
+      relatedEntityType: 'transfer',
+      relatedEntityId: transferId,
+      note: note || 'Transferência entre contas.',
+      createdAt,
+    },
+  ];
+}
+
+export function getTransferTransactions(data: AppData, transferId: string): AccountTransaction[] {
+  if (!transferId) return [];
+  return getAccountTransactions(data).filter((transaction) => (
+    transaction.relatedEntityType === 'transfer'
+    && transaction.relatedEntityId === transferId
+    && (transaction.kind === 'transfer_out' || transaction.kind === 'transfer_in')
+  ));
+}
+
+export function createTransferReversalTransactions(
+  data: AppData,
+  transferId: string,
+  date?: string,
+): [AccountTransaction, AccountTransaction] | null {
+  const transactions = getTransferTransactions(data, transferId);
+  const outTransaction = transactions.find((transaction) => transaction.kind === 'transfer_out');
+  const inTransaction = transactions.find((transaction) => transaction.kind === 'transfer_in');
+  if (
+    !outTransaction
+    || !inTransaction
+    || isTransactionReversed(data, outTransaction.id)
+    || isTransactionReversed(data, inTransaction.id)
+    || Math.round((Math.abs(outTransaction.amount) - Math.abs(inTransaction.amount)) * 100) !== 0
+  ) {
+    return null;
+  }
+  const reversalDate = date ?? outTransaction.date;
+  return [
+    createReversalTransaction(outTransaction, reversalDate),
+    createReversalTransaction(inTransaction, reversalDate),
+  ];
 }
 
 export function createReversalTransaction(transaction: AccountTransaction, date = transaction.date): AccountTransaction {

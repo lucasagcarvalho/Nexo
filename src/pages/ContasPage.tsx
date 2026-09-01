@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Building2, ArrowDownCircle, History, ArrowLeft, Save, X, Search, RotateCcw, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Plus, Edit2, Trash2, Building2, ArrowDownCircle, History, ArrowLeft, Save, X, Search, RotateCcw, ArrowUpRight, ArrowDownLeft, Repeat2 } from 'lucide-react';
 import { useData } from '@/store/DataContext';
 import { useMonth } from '@/store/MonthContext';
 import { formatCurrency, formatMonthBR, formatDateBR } from '@/lib/format';
 import { formatBankAccountLabel } from '@/lib/finance/accountRules';
-import { calculateAccountLedgerBalance, getTransactionsForAccount } from '@/lib/finance/accountTransactionRules';
+import { calculateAccountLedgerBalance, getTransactionsForAccount, getTransferTransactions, isTransactionReversed } from '@/lib/finance/accountTransactionRules';
 import type { AccountTransaction, AccountTransactionKind, AppData, BankAccount, BankAccountType } from '@/lib/types';
 import { Card, Button, Modal, Input, Select, TextArea, ConfirmDialog, EmptyState, CurrencyInput, PersonSelect, MonthPicker, Badge } from '@/components/ui';
 
@@ -152,13 +152,22 @@ function transactionRelatedLabel(data: AppData, transaction: AccountTransaction)
 }
 
 export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }: ContasPageProps) {
-  const { data, addBankAccount, updateBankAccount, deleteBankAccount, reconcileBankAccountBalance, addPerson } = useData();
+  const { data, addBankAccount, updateBankAccount, deleteBankAccount, reconcileBankAccountBalance, transferBalance, undoTransfer, addPerson } = useData();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BankAccount | null>(null);
   const [snapshotModal, setSnapshotModal] = useState<BankAccount | null>(null);
   const [historyModal, setHistoryModal] = useState<BankAccount | null>(null);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [snapshotAmount, setSnapshotAmount] = useState(0);
   const [snapshotDate, setSnapshotDate] = useState('');
+  const [transferForm, setTransferForm] = useState({
+    fromAccountId: '',
+    toAccountId: '',
+    amount: 0,
+    date: '',
+    note: '',
+  });
 
   const [form, setForm] = useState<AccountForm>(emptyAccountForm);
 
@@ -169,6 +178,18 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
     setEditing(null);
     setForm(emptyAccountForm());
     setModalOpen(true);
+  };
+
+  const openTransfer = () => {
+    const today = new Date();
+    setTransferForm({
+      fromAccountId: data.bankAccounts[0]?.id ?? '',
+      toAccountId: data.bankAccounts.find((account) => account.id !== data.bankAccounts[0]?.id)?.id ?? '',
+      amount: 0,
+      date: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+      note: '',
+    });
+    setTransferModalOpen(true);
   };
 
   const save = () => {
@@ -193,6 +214,38 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
     if (!snapshotModal || !snapshotDate) return;
     reconcileBankAccountBalance(snapshotModal.id, snapshotAmount, snapshotDate, `Conciliação manual de ${formatMonthBR(snapshotDate.slice(0, 7))}.`);
     setSnapshotModal(null);
+  };
+
+  const fromTransferAccount = transferForm.fromAccountId
+    ? data.bankAccounts.find((account) => account.id === transferForm.fromAccountId) ?? null
+    : null;
+  const toTransferAccount = transferForm.toAccountId
+    ? data.bankAccounts.find((account) => account.id === transferForm.toAccountId) ?? null
+    : null;
+  const canTransfer = (
+    !!fromTransferAccount
+    && !!toTransferAccount
+    && transferForm.fromAccountId !== transferForm.toAccountId
+    && transferForm.amount > 0
+    && !!transferForm.date
+  );
+  const fromBalanceAfterTransfer = fromTransferAccount ? fromTransferAccount.balance - transferForm.amount : undefined;
+  const toBalanceAfterTransfer = toTransferAccount ? toTransferAccount.balance + transferForm.amount : undefined;
+  const transferWarning = fromBalanceAfterTransfer !== undefined && fromBalanceAfterTransfer < 0
+    ? `Esta transferência deixará a conta de origem em ${formatCurrency(fromBalanceAfterTransfer)}.`
+    : null;
+
+  const saveTransfer = () => {
+    if (!canTransfer) return;
+    transferBalance({
+      fromAccountId: transferForm.fromAccountId,
+      toAccountId: transferForm.toAccountId,
+      amount: transferForm.amount,
+      date: transferForm.date,
+      note: transferForm.note.trim() || undefined,
+    });
+    setConfirmTransfer(false);
+    setTransferModalOpen(false);
   };
 
   const accountSnapshots = (accountId: string) =>
@@ -251,6 +304,7 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
             onBackToAccounts?.();
           }}
           onOpenSnapshot={openSnapshot}
+          onUndoTransfer={undoTransfer}
           addPerson={addPerson}
         />
         {snapshotModalContent}
@@ -265,7 +319,12 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
           <h1 className="text-2xl font-bold text-gray-900">Contas Bancárias</h1>
           <p className="text-sm text-gray-500">{data.bankAccounts.length} conta(s) · Saldo total: {formatCurrency(totalBalance)}</p>
         </div>
-        <Button onClick={openAdd}><Plus size={16} className="inline mr-1" /> Nova conta</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={openTransfer} disabled={data.bankAccounts.length < 2}>
+            <Repeat2 size={16} className="inline mr-1" /> Transferir saldo
+          </Button>
+          <Button onClick={openAdd}><Plus size={16} className="inline mr-1" /> Nova conta</Button>
+        </div>
       </div>
 
       {/* Total balance card */}
@@ -332,6 +391,81 @@ export function ContasPage({ accountId = null, onOpenAccount, onBackToAccounts }
       {/* Reconciliation modal */}
       {snapshotModalContent}
 
+      <Modal open={transferModalOpen} onClose={() => setTransferModalOpen(false)} title="Transferir saldo" footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setTransferModalOpen(false)}>Cancelar</Button>
+          <Button onClick={() => setConfirmTransfer(true)} disabled={!canTransfer}>Revisar transferência</Button>
+        </div>
+      }>
+        <form onSubmit={(e) => { e.preventDefault(); if (canTransfer) setConfirmTransfer(true); }} className="space-y-3">
+          <Select
+            label="Conta de origem"
+            value={transferForm.fromAccountId}
+            onChange={(value) => setTransferForm({ ...transferForm, fromAccountId: value })}
+            options={[
+              { value: '', label: 'Selecione a origem' },
+              ...data.bankAccounts.map((account) => ({ value: account.id, label: formatBankAccountLabel(account) })),
+            ]}
+            required
+          />
+          <Select
+            label="Conta de destino"
+            value={transferForm.toAccountId}
+            onChange={(value) => setTransferForm({ ...transferForm, toAccountId: value })}
+            options={[
+              { value: '', label: 'Selecione o destino' },
+              ...data.bankAccounts.map((account) => ({ value: account.id, label: formatBankAccountLabel(account) })),
+            ]}
+            required
+          />
+          <CurrencyInput label="Valor" value={transferForm.amount} onChange={(value) => setTransferForm({ ...transferForm, amount: value })} required />
+          <Input label="Data" type="date" value={transferForm.date} onChange={(value) => setTransferForm({ ...transferForm, date: value })} required />
+          <TextArea label="Observação" value={transferForm.note} onChange={(value) => setTransferForm({ ...transferForm, note: value })} />
+          {transferForm.fromAccountId && transferForm.toAccountId && transferForm.fromAccountId === transferForm.toAccountId && (
+            <p className="text-sm text-rose-600">Origem e destino precisam ser contas diferentes.</p>
+          )}
+          <button type="submit" className="hidden" aria-hidden="true" />
+        </form>
+      </Modal>
+
+      <Modal open={confirmTransfer} onClose={() => setConfirmTransfer(false)} title="Confirmar transferência" size="sm" footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setConfirmTransfer(false)}>Cancelar</Button>
+          {transferWarning && <Button variant="secondary" onClick={() => setConfirmTransfer(false)}>Escolher outra conta</Button>}
+          <Button onClick={saveTransfer}>{transferWarning ? 'Continuar mesmo assim' : 'Confirmar transferência'}</Button>
+        </div>
+      }>
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm text-gray-500">Valor</p>
+            <p className="text-lg font-bold text-gray-900">{formatCurrency(transferForm.amount)}</p>
+            {transferForm.date && <p className="text-xs text-gray-400">{formatDateBR(transferForm.date)}</p>}
+          </div>
+          <div className="space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
+            {fromTransferAccount && (
+              <div className="space-y-1">
+                <p className="font-semibold text-gray-800">{formatBankAccountLabel(fromTransferAccount)}</p>
+                <div className="flex justify-between gap-3"><span className="text-gray-500">Atual</span><span className="font-medium text-gray-800">{formatCurrency(fromTransferAccount.balance)}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-gray-500">Depois</span><span className={`font-bold ${fromBalanceAfterTransfer !== undefined && fromBalanceAfterTransfer >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(fromBalanceAfterTransfer ?? 0)}</span></div>
+              </div>
+            )}
+            {toTransferAccount && (
+              <div className="space-y-1 border-t border-gray-200 pt-2">
+                <p className="font-semibold text-gray-800">{formatBankAccountLabel(toTransferAccount)}</p>
+                <div className="flex justify-between gap-3"><span className="text-gray-500">Atual</span><span className="font-medium text-gray-800">{formatCurrency(toTransferAccount.balance)}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-gray-500">Depois</span><span className="font-bold text-emerald-600">{formatCurrency(toBalanceAfterTransfer ?? 0)}</span></div>
+              </div>
+            )}
+          </div>
+          {transferWarning && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm font-semibold text-amber-700">Atenção</p>
+              <p className="mt-1 text-sm text-amber-700">{transferWarning}</p>
+            </div>
+          )}
+        </div>
+      </Modal>
+
       {/* History modal */}
       <Modal open={!!historyModal} onClose={() => setHistoryModal(null)} title={historyModal ? `Histórico · ${formatBankAccountLabel(historyModal)}` : ''}>
         {historyModal && (
@@ -360,6 +494,7 @@ function AccountDetailView({
   onEdit,
   onDelete,
   onOpenSnapshot,
+  onUndoTransfer,
   addPerson,
 }: {
   account?: BankAccount;
@@ -368,6 +503,7 @@ function AccountDetailView({
   onEdit: (id: string, updates: Partial<BankAccount>) => void;
   onDelete: (id: string) => void;
   onOpenSnapshot: (account: BankAccount) => void;
+  onUndoTransfer: (transferId: string) => void;
   addPerson: (name: string, note?: string) => string;
 }) {
   const { selectedMonth } = useMonth();
@@ -521,7 +657,7 @@ function AccountDetailView({
         )}
         </section>
 
-        <AccountStatement account={account} data={data} initialMonth={selectedMonth} />
+        <AccountStatement account={account} data={data} initialMonth={selectedMonth} onUndoTransfer={onUndoTransfer} />
       </div>
 
       <ConfirmDialog
@@ -543,15 +679,18 @@ function AccountStatement({
   account,
   data,
   initialMonth,
+  onUndoTransfer,
 }: {
   account: BankAccount;
   data: AppData;
   initialMonth: string;
+  onUndoTransfer: (transferId: string) => void;
 }) {
   const [monthFilter, setMonthFilter] = useState(initialMonth);
   const [typeFilter, setTypeFilter] = useState<StatementTypeFilter>('all');
   const [flowFilter, setFlowFilter] = useState<StatementFlowFilter>('all');
   const [search, setSearch] = useState('');
+  const [confirmTransferReversal, setConfirmTransferReversal] = useState<AccountTransaction | null>(null);
 
   useEffect(() => {
     setMonthFilter(initialMonth);
@@ -588,6 +727,14 @@ function AccountStatement({
   }, [account.id, data, flowFilter, monthFilter, search, typeFilter]);
 
   const monthlyTotal = statementRows.reduce((sum, row) => sum + row.transaction.amount, 0);
+  const transferToReverse = confirmTransferReversal?.relatedEntityId
+    ? getTransferTransactions(data, confirmTransferReversal.relatedEntityId)
+    : [];
+  const transferOut = transferToReverse.find((transaction) => transaction.kind === 'transfer_out') ?? null;
+  const transferIn = transferToReverse.find((transaction) => transaction.kind === 'transfer_in') ?? null;
+  const transferFromAccount = transferOut ? data.bankAccounts.find((item) => item.id === transferOut.accountId) ?? null : null;
+  const transferToAccount = transferIn ? data.bankAccounts.find((item) => item.id === transferIn.accountId) ?? null : null;
+  const transferAmount = transferOut ? Math.abs(transferOut.amount) : Math.abs(confirmTransferReversal?.amount ?? 0);
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -625,6 +772,12 @@ function AccountStatement({
         <div className="divide-y divide-gray-100">
           {statementRows.map(({ transaction, title, relatedLabel, balanceAfter }) => {
             const isCredit = transaction.amount >= 0;
+            const canReverseTransfer = (
+              transaction.relatedEntityType === 'transfer'
+              && !!transaction.relatedEntityId
+              && (transaction.kind === 'transfer_out' || transaction.kind === 'transfer_in')
+              && !isTransactionReversed(data, transaction.id)
+            );
             const Icon = transaction.kind === 'reversal'
               ? RotateCcw
               : isCredit
@@ -652,12 +805,54 @@ function AccountStatement({
                     {isCredit ? '+' : '-'} {formatCurrency(Math.abs(transaction.amount))}
                   </p>
                   <p className="text-xs text-gray-400">Saldo após: {formatCurrency(balanceAfter)}</p>
+                  {canReverseTransfer && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmTransferReversal(transaction)}
+                      className="mt-2 text-xs font-semibold text-amber-700 hover:text-amber-800"
+                    >
+                      Estornar transferência
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
       )}
+      <Modal open={confirmTransferReversal !== null} onClose={() => setConfirmTransferReversal(null)} title="Estornar transferência" size="sm" footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setConfirmTransferReversal(null)}>Cancelar</Button>
+          <Button onClick={() => {
+            if (confirmTransferReversal?.relatedEntityId) onUndoTransfer(confirmTransferReversal.relatedEntityId);
+            setConfirmTransferReversal(null);
+          }}>
+            Confirmar estorno
+          </Button>
+        </div>
+      }>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">Esta ação cria reversões nas duas contas e preserva os lançamentos originais.</p>
+          <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-2">
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Valor</span>
+              <span className="font-semibold text-gray-900">{formatCurrency(transferAmount)}</span>
+            </div>
+            {transferFromAccount && transferOut && (
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Origem após estorno</span>
+                <span className="font-semibold text-emerald-600">{formatCurrency(transferFromAccount.balance - transferOut.amount)}</span>
+              </div>
+            )}
+            {transferToAccount && transferIn && (
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Destino após estorno</span>
+                <span className="font-semibold text-rose-600">{formatCurrency(transferToAccount.balance - transferIn.amount)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

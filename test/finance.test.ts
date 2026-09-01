@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedData } from '../src/lib/seed';
 import { migrateData } from '../src/lib/storage';
-import type { AppData, CardInvoicePayment, CardPurchase, CreditCard, Debt, Expense, ExpensePayment, Income, IncomeReceipt } from '../src/lib/types';
+import type { AppData, CardInvoicePayment, CardPurchase, CreditCard, Debt, DebtPayment, Expense, ExpensePayment, Income, IncomeReceipt } from '../src/lib/types';
 import { addMonths, currentMonthKey } from '../src/lib/format';
 import {
   cardInvoiceDetail,
@@ -10,18 +10,23 @@ import {
   calculateTotalLedgerBalance,
   createCardInvoicePaymentReversalTransaction,
   createCardInvoicePaymentTransaction,
+  createDebtPaymentReversalTransaction,
+  createDebtPaymentTransaction,
   createExpensePaymentReversalTransaction,
   createExpensePaymentTransaction,
   createIncomeReceiptReversalTransaction,
   createIncomeReceiptTransaction,
   createManualAdjustmentTransaction,
   createReversalTransaction,
+  createTransferReversalTransactions,
+  createTransferTransactions,
   getCardCommitmentSummary,
   getAccountTransactions,
   getAccountLedgerBalanceComparisons,
   getAccountLedgerBalanceDifferences,
   getDataQualityIssues,
   getDebtCommitmentSummary,
+  getDebtPaymentForMonth,
   getFinancialHealthIndicators,
   getFutureInstallmentCalendar,
   cardUtilization,
@@ -40,6 +45,7 @@ import {
   getTransactionsForAccount,
   getTransactionsForMonth,
   getTotalLedgerBalanceComparison,
+  getTransferTransactions,
   getExpensePaymentForMonth,
   getIncomeReceiptForMonth,
   getActiveVigencia,
@@ -1060,6 +1066,100 @@ test('dívidas ativa, quitada, última parcela e zerada respeitam regra mensal',
   assert.equal(debtPaymentForMonth(debt({ installmentsRemaining: 0 }), '2026-08'), 0);
 });
 
+test('pagamento mensal de dívida cria movimentação negativa sem duplicar projeção', () => {
+  const data = baseData();
+  const paymentTransaction = createDebtPaymentTransaction(
+    'debt-1',
+    'acc-1',
+    700,
+    '2026-09-15',
+    '2026-09',
+    'Pagamento de empréstimo.',
+  );
+  assert.ok(paymentTransaction);
+  const payment: DebtPayment = {
+    id: 'debt-payment-1',
+    debtId: 'debt-1',
+    monthKey: '2026-09',
+    date: '2026-09-15',
+    accountId: 'acc-1',
+    expectedAmount: 700,
+    paidAmount: 700,
+    transactionId: paymentTransaction.id,
+    createdAt: paymentTransaction.createdAt,
+  };
+  data.bankAccounts = [{ id: 'acc-1', bank: 'Santander', name: 'Conta', holder: 'Lucas', balance: 1300 }];
+  data.incomes = [];
+  data.expenses = [];
+  data.cards = [];
+  data.purchases = [];
+  data.debts = [debt({ id: 'debt-1', name: 'Empréstimo', installmentAmount: 700, installmentsRemaining: 3, dueDate: '2026-09-15' })];
+  data.debtPayments = [payment];
+  data.accountTransactions = [paymentTransaction];
+
+  const summary = getMonthlyFinancialSummary(data, '2026-09');
+  const relatedTransaction = getTransactionByRelatedEntity(data, 'debt', 'debt-1', '2026-09');
+
+  assert.equal(paymentTransaction.kind, 'debt_payment');
+  assert.equal(paymentTransaction.amount, -700);
+  assert.equal(paymentTransaction.relatedEntityType, 'debt');
+  assert.equal(paymentTransaction.relatedEntityId, 'debt-1');
+  assert.equal(paymentTransaction.relatedMonthKey, '2026-09');
+  assert.equal(getDebtPaymentForMonth(data, 'debt-1', '2026-09')?.id, 'debt-payment-1');
+  assert.equal(getTransactionsForAccount(data, 'acc-1')[0].id, paymentTransaction.id);
+  assert.equal(relatedTransaction?.id, paymentTransaction.id);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), -700);
+  assert.equal(summary.debtExpenses, 700);
+  assert.equal(summary.totalExpenses, 700);
+});
+
+test('transação de pagamento de dívida rejeita dados inválidos', () => {
+  assert.equal(createDebtPaymentTransaction('', 'acc-1', 100, '2026-09-15', '2026-09'), null);
+  assert.equal(createDebtPaymentTransaction('debt-1', '', 100, '2026-09-15', '2026-09'), null);
+  assert.equal(createDebtPaymentTransaction('debt-1', 'acc-1', 0, '2026-09-15', '2026-09'), null);
+  assert.equal(createDebtPaymentTransaction('debt-1', 'acc-1', Number.NaN, '2026-09-15', '2026-09'), null);
+  assert.equal(createDebtPaymentTransaction('debt-1', 'acc-1', 100, '2026-09', '2026-09'), null);
+  assert.equal(createDebtPaymentTransaction('debt-1', 'acc-1', 100, '2026-09-15', '2026/09'), null);
+});
+
+test('estorno de pagamento mensal de dívida restaura saldo e parcela pendente', () => {
+  const data = baseData();
+  const paymentTransaction = createDebtPaymentTransaction('debt-1', 'acc-1', 700, '2026-09-15', '2026-09');
+  assert.ok(paymentTransaction);
+  data.debts = [debt({ id: 'debt-1', name: 'Empréstimo', installmentAmount: 700, installmentsRemaining: 3, dueDate: '2026-09-15' })];
+  data.debtPayments = [{
+    id: 'debt-payment-1',
+    debtId: 'debt-1',
+    monthKey: '2026-09',
+    date: '2026-09-15',
+    accountId: 'acc-1',
+    expectedAmount: 700,
+    paidAmount: 700,
+    transactionId: paymentTransaction.id,
+    createdAt: paymentTransaction.createdAt,
+  }];
+  data.accountTransactions = [paymentTransaction];
+
+  assert.equal(getDebtPaymentForMonth(data, 'debt-1', '2026-09')?.id, 'debt-payment-1');
+
+  const reversal = createDebtPaymentReversalTransaction(data, 'debt-1', '2026-09', '2026-09-16');
+  assert.ok(reversal);
+  data.debtPayments = data.debtPayments.filter((payment) => payment.id !== 'debt-payment-1');
+  data.accountTransactions = [...data.accountTransactions, reversal];
+
+  assert.equal(reversal.kind, 'reversal');
+  assert.equal(reversal.amount, 700);
+  assert.equal(reversal.relatedEntityType, 'debt');
+  assert.equal(reversal.relatedEntityId, 'debt-1');
+  assert.equal(reversal.relatedMonthKey, '2026-09');
+  assert.equal(reversal.reversalOfTransactionId, paymentTransaction.id);
+  assert.equal(isTransactionReversed(data, paymentTransaction.id), true);
+  assert.equal(getDebtPaymentForMonth(data, 'debt-1', '2026-09'), null);
+  assert.equal(debtPaymentForMonth(data.debts[0], '2026-09'), 700);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), 0);
+  assert.equal(createDebtPaymentReversalTransaction(data, 'debt-1', '2026-09'), null);
+});
+
 test('visão de endividamento resume dívidas ativas e ignora quitadas', () => {
   const data = baseData();
   data.incomes = [income({ vigencias: [{ id: 'vig-income', amount: 5000, startDate: '2026-08', endDate: null }] })];
@@ -1192,6 +1292,15 @@ test('migração inicializa pagamentos de fatura de forma compatível', () => {
   const migrated = migrateData(legacyData);
 
   assert.deepEqual(migrated.cardInvoicePayments, []);
+});
+
+test('migração inicializa pagamentos de dívida de forma compatível', () => {
+  const legacyData = seedData();
+  delete (legacyData as Partial<AppData>).debtPayments;
+
+  const migrated = migrateData(legacyData);
+
+  assert.deepEqual(migrated.debtPayments, []);
 });
 
 test('migração de saldo inicial é idempotente por conta', () => {
@@ -1377,6 +1486,97 @@ test('ledger central cria reversão e detecta transação revertida', () => {
   assert.equal(isTransactionReversed(data, original.id), true);
   assert.equal(getTransactionByRelatedEntity(data, 'expense', 'energy', '2026-08'), null);
   assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), 0);
+});
+
+test('transferência entre contas cria duas pernas e mantém total bancário', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 2000 },
+    { id: 'acc-2', bank: 'Nubank', name: 'Conta', holder: 'Lucas', balance: 1000 },
+  ];
+  data.incomes = [income()];
+  data.expenses = [expense()];
+
+  const transactions = createTransferTransactions('acc-1', 'acc-2', 750, '2026-09-20', 'Reserva do mês.');
+  assert.ok(transactions);
+  const [outTransaction, inTransaction] = transactions;
+  data.accountTransactions = [outTransaction, inTransaction];
+  data.bankAccounts = data.bankAccounts.map((account) => {
+    if (account.id === 'acc-1') return { ...account, balance: account.balance + outTransaction.amount };
+    if (account.id === 'acc-2') return { ...account, balance: account.balance + inTransaction.amount };
+    return account;
+  });
+
+  const summary = getMonthlyFinancialSummary(data, '2026-09');
+
+  assert.equal(outTransaction.kind, 'transfer_out');
+  assert.equal(inTransaction.kind, 'transfer_in');
+  assert.equal(outTransaction.amount, -750);
+  assert.equal(inTransaction.amount, 750);
+  assert.equal(outTransaction.relatedEntityType, 'transfer');
+  assert.equal(inTransaction.relatedEntityType, 'transfer');
+  assert.equal(outTransaction.relatedEntityId, inTransaction.relatedEntityId);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), -750);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-2'), 750);
+  assert.equal(calculateTotalLedgerBalance(data), 0);
+  assert.equal(data.bankAccounts.reduce((sum, account) => sum + account.balance, 0), 3000);
+  assert.equal(summary.income, 5000);
+  assert.equal(summary.totalExpenses, 100);
+});
+
+test('transferência entre contas rejeita origem igual, valor inválido e data inválida', () => {
+  assert.equal(createTransferTransactions('', 'acc-2', 100, '2026-09-20'), null);
+  assert.equal(createTransferTransactions('acc-1', '', 100, '2026-09-20'), null);
+  assert.equal(createTransferTransactions('acc-1', 'acc-1', 100, '2026-09-20'), null);
+  assert.equal(createTransferTransactions('acc-1', 'acc-2', 0, '2026-09-20'), null);
+  assert.equal(createTransferTransactions('acc-1', 'acc-2', Number.NaN, '2026-09-20'), null);
+  assert.equal(createTransferTransactions('acc-1', 'acc-2', 100, '2026-09'), null);
+});
+
+test('estorno de transferência cria duas reversões e restaura saldos', () => {
+  const data = baseData();
+  data.bankAccounts = [
+    { id: 'acc-1', bank: 'Itaú', name: 'Conta', holder: 'Lucas', balance: 1250 },
+    { id: 'acc-2', bank: 'Nubank', name: 'Conta', holder: 'Lucas', balance: 1750 },
+  ];
+  data.incomes = [income()];
+  data.expenses = [expense()];
+  const transactions = createTransferTransactions('acc-1', 'acc-2', 750, '2026-09-20', 'Reserva do mês.');
+  assert.ok(transactions);
+  const [outTransaction, inTransaction] = transactions;
+  data.accountTransactions = [outTransaction, inTransaction];
+
+  const transferId = outTransaction.relatedEntityId;
+  assert.ok(transferId);
+  assert.deepEqual(
+    new Set(getTransferTransactions(data, transferId).map((transaction) => transaction.id)),
+    new Set([outTransaction.id, inTransaction.id]),
+  );
+
+  const reversals = createTransferReversalTransactions(data, transferId, '2026-09-21');
+  assert.ok(reversals);
+  data.accountTransactions = [...data.accountTransactions, ...reversals];
+  data.bankAccounts = data.bankAccounts.map((account) => {
+    const reversal = reversals.find((transaction) => transaction.accountId === account.id);
+    return reversal ? { ...account, balance: account.balance + reversal.amount } : account;
+  });
+
+  const summary = getMonthlyFinancialSummary(data, '2026-09');
+
+  assert.equal(reversals.length, 2);
+  assert.deepEqual(reversals.map((transaction) => transaction.kind), ['reversal', 'reversal']);
+  assert.deepEqual(reversals.map((transaction) => transaction.reversalOfTransactionId), [outTransaction.id, inTransaction.id]);
+  assert.deepEqual(reversals.map((transaction) => transaction.relatedEntityId), [transferId, transferId]);
+  assert.equal(reversals[0].amount, 750);
+  assert.equal(reversals[1].amount, -750);
+  assert.equal(data.bankAccounts.find((account) => account.id === 'acc-1')?.balance, 2000);
+  assert.equal(data.bankAccounts.find((account) => account.id === 'acc-2')?.balance, 1000);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-1'), 0);
+  assert.equal(calculateAccountLedgerBalance(data, 'acc-2'), 0);
+  assert.equal(calculateTotalLedgerBalance(data), 0);
+  assert.equal(summary.income, 5000);
+  assert.equal(summary.totalExpenses, 100);
+  assert.equal(createTransferReversalTransactions(data, transferId), null);
 });
 
 test('ledger central evita duplicidade por id ao somar movimentações', () => {

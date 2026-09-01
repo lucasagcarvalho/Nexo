@@ -1263,7 +1263,7 @@ Arquivos:
 
 ## ETAPA 20 — Criar pagamento mensal de dívida por conta
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Objetivo
@@ -1283,49 +1283,70 @@ debt_payment -R$ 700
 
 ### Critérios de aceite
 
-- [ ] Estado mensal.
-- [ ] Conta.
-- [ ] Data.
-- [ ] Valor real.
-- [ ] Confirmação.
-- [ ] Saldo reduz.
-- [ ] Extrato recebe movimento.
-- [ ] Projeção de dívida continua coerente.
+- [x] Estado mensal.
+- [x] Conta.
+- [x] Data.
+- [x] Valor real.
+- [x] Confirmação.
+- [x] Saldo reduz.
+- [x] Extrato recebe movimento.
+- [x] Projeção de dívida continua coerente.
 
 ### Notas de implementação
 
 ```text
 Model:
--
+- DebtPayment vincula dívida, competência, conta, data, valor previsto, valor pago e transação.
+- AppData ganhou `debtPayments`, migration e seed com array vazio.
+
+Fluxo:
+- Dívidas ativas exibem ação "Pagar parcela" quando há parcela prevista e ainda não paga no mês.
+- Pagamento abre modal com data, valor real e conta obrigatória.
+- Confirmação mostra conta, saldo atual e saldo após, com alerta se o saldo ficar negativo.
+- `payDebt` cria transação `debt_payment` negativa, reduz saldo da conta e registra estado mensal.
+- Projeção e resumo mensal continuam contando a parcela da dívida uma única vez.
 
 Arquivos:
--
+- `src/lib/types.ts`
+- `src/lib/seed.ts`
+- `src/lib/storage.ts`
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/DividasPage.tsx`
+- `test/finance.test.ts`
 ```
 
 ---
 
 ## ETAPA 21 — Estornar pagamento mensal de dívida
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Critérios de aceite
 
-- [ ] Confirmação.
-- [ ] Parcela retorna a pendente.
-- [ ] Saldo retorna.
-- [ ] Estorno no extrato.
-- [ ] Histórico preservado.
-- [ ] Idempotência.
+- [x] Confirmação.
+- [x] Parcela retorna a pendente.
+- [x] Saldo retorna.
+- [x] Estorno no extrato.
+- [x] Histórico preservado.
+- [x] Idempotência.
 
 ### Notas de implementação
 
 ```text
 Fluxo:
--
+- Dívida paga no mês exibe ação "Desfazer pagamento".
+- Confirmação mostra conta, saldo atual e saldo após devolução.
+- `undoDebtPayment` remove o `DebtPayment`, preserva a transação original e cria `reversal`.
+- Parcela volta a ficar pendente porque o estado mensal é removido.
+- Reversão é idempotente: pagamento já estornado não gera nova reversão.
 
 Arquivos:
--
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/DividasPage.tsx`
+- `test/finance.test.ts`
 ```
 
 ---
@@ -1334,7 +1355,7 @@ Arquivos:
 
 ## ETAPA 22 — Criar transferência global entre contas
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P1
 
 ### UX
@@ -1386,33 +1407,41 @@ Nubank transfer_in  +R$ 1.000
 
 ### Critérios de aceite
 
-- [ ] Botão global.
-- [ ] Duas pernas.
-- [ ] Mesmo identificador de transferência.
-- [ ] Confirmação.
-- [ ] Preview antes/depois.
-- [ ] Extrato de ambas as contas.
-- [ ] Total bancário não muda.
-- [ ] Sem receita/despesa.
+- [x] Botão global.
+- [x] Duas pernas.
+- [x] Mesmo identificador de transferência.
+- [x] Confirmação.
+- [x] Preview antes/depois.
+- [x] Extrato de ambas as contas.
+- [x] Total bancário não muda.
+- [x] Sem receita/despesa.
 
 ### Notas de implementação
 
 ```text
 Model:
--
+- Transferência usa duas `AccountTransaction` com `relatedEntityType: transfer` e mesmo `relatedEntityId`.
+- Não cria receita, despesa ou entidade separada nesta etapa.
 
 UI:
--
+- Botão global "Transferir saldo" na tela principal de Contas, ao lado de "Nova conta".
+- Modal coleta origem, destino, valor, data e observação opcional.
+- Confirmação mostra preview antes/depois das duas contas.
+- Saldo negativo na origem exibe alerta explícito antes de confirmar.
+- `transferBalance` grava `transfer_out` e `transfer_in` em uma única atualização.
 
 Arquivos:
--
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/ContasPage.tsx`
+- `test/finance.test.ts`
 ```
 
 ---
 
 ## ETAPA 23 — Permitir estorno de transferência
 
-**Status:** [ ]  
+**Status:** [x]  
 **Prioridade:** P0
 
 ### Objetivo
@@ -1423,21 +1452,28 @@ Não apagar as pernas originais.
 
 ### Critérios de aceite
 
-- [ ] Confirmação.
-- [ ] Duas reversões consistentes.
-- [ ] Saldos restaurados.
-- [ ] Histórico preservado em ambas.
-- [ ] Sem efeito em receita/despesa.
-- [ ] Idempotência.
+- [x] Confirmação.
+- [x] Duas reversões consistentes.
+- [x] Saldos restaurados.
+- [x] Histórico preservado em ambas.
+- [x] Sem efeito em receita/despesa.
+- [x] Idempotência.
 
 ### Notas de implementação
 
 ```text
 Fluxo:
--
+- Extrato das contas mostra ação "Estornar transferência" para pernas originais ainda não estornadas.
+- Confirmação informa que as pernas originais serão preservadas e mostra o impacto de retorno nas duas contas.
+- `undoTransfer` localiza as duas pernas pelo `relatedEntityId` compartilhado e cria duas transações `reversal`.
+- Saldos das duas contas são restaurados em uma única atualização.
+- Estorno é idempotente: transferência já estornada não gera novas reversões.
 
 Arquivos:
--
+- `src/lib/finance/accountTransactionRules.ts`
+- `src/store/DataContext.tsx`
+- `src/pages/ContasPage.tsx`
+- `test/finance.test.ts`
 ```
 
 ---
@@ -1978,6 +2014,10 @@ Arquivos:
 | 2026-08-31 | Etapa 17 — Padronizar confirmação antes de alterar saldo | Concluído | Criada confirmação final para recebimentos, pagamentos e estornos com saldo antes/depois e alerta de saldo negativo sem bloquear a operação. | `src/components/ui.tsx`, `src/pages/ReceitasPage.tsx`, `src/pages/GastosPage.tsx`, `src/pages/PlanejamentoPage.tsx` |
 | 2026-08-31 | Etapa 18 — Registrar conta pagadora da fatura | Concluído | Pagamento de fatura exige conta e confirmação, cria movimento `card_invoice_payment` negativo no ledger, reduz o saldo da conta e mantém a fatura sem dupla contagem nas despesas. | `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/storage.ts`, `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/CartoesPage.tsx`, `test/finance.test.ts` |
 | 2026-08-31 | Etapa 19 — Estornar pagamento de fatura | Concluído | Pagamento de fatura pode ser desfeito com confirmação, devolvendo saldo à conta, preservando o movimento original e criando `reversal` no extrato sem liberar limite indevidamente. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/CartoesPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 20 — Criar pagamento mensal de dívida por conta | Concluído | Pagamento mensal de dívida exige conta, data, valor real e confirmação, cria movimento `debt_payment` negativo no ledger, reduz o saldo da conta e mantém a projeção de dívida sem dupla contagem. | `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/storage.ts`, `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/DividasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 21 — Estornar pagamento mensal de dívida | Concluído | Pagamento mensal de dívida pode ser desfeito com confirmação, removendo o estado mensal, devolvendo saldo à conta e criando `reversal` no extrato com idempotência. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/DividasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 22 — Criar transferência global entre contas | Concluído | Tela principal de Contas ganhou transferência global com origem, destino, valor, data, preview antes/depois, alerta de saldo negativo e duas pernas `transfer_out`/`transfer_in` com mesmo identificador sem afetar receitas/despesas. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ContasPage.tsx`, `test/finance.test.ts` |
+| 2026-08-31 | Etapa 23 — Permitir estorno de transferência | Concluído | Transferências podem ser estornadas pelo extrato com confirmação, criando duas reversões consistentes, restaurando saldos e preservando as pernas originais sem afetar receitas/despesas. | `src/lib/finance/accountTransactionRules.ts`, `src/store/DataContext.tsx`, `src/pages/ContasPage.tsx`, `test/finance.test.ts` |
 
 ---
 
